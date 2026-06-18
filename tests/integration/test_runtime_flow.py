@@ -106,3 +106,30 @@ def test_confirm_proposal_rejected_denies_execution_without_tool_result() -> Non
     assert trace.proposal.executed is False
     assert trace.tool_call is None
     assert trace.tool_result is None
+
+
+def test_confirm_proposal_records_manual_fallback_without_marking_executed() -> None:
+    runtime = BuddysRuntime(
+        provider=MockProvider(),
+        adapter=MockHomeAdapter(can_control_devices=False),
+        policy=PermissionPolicy(),
+        trace_store=TraceStore(),
+        cost_meter=CostMeter(),
+    )
+    buddy = runtime.create_home_buddy(user_id="user_1")
+    proposal = runtime.submit_message(
+        buddy_id=buddy.buddy_id,
+        user_id="user_1",
+        text="把客厅灯调暗",
+    )
+
+    trace = runtime.confirm_proposal(proposal.proposal_id, approved=True)
+
+    assert trace.permission_decision.policy_result == "allow"
+    assert trace.proposal is not None
+    assert trace.proposal.executed is False
+    assert trace.tool_result is not None
+    assert trace.tool_result.status == "manual_required"
+    assert trace.tool_result.error_code == "adapter_unavailable"
+    assert trace.tool_result.user_instruction == "请手动把客厅灯调暗到约 35%。"
+    assert trace.tool_result.voice_prompt == "我现在无法直接控制客厅灯。请手动把客厅灯调暗到约 35%，完成后可以告诉我。"

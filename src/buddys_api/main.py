@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from buddys_api.adapters.mock_home import MockHomeAdapter
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import ActionTrace, Buddy, CostEvent
 
@@ -34,7 +36,7 @@ class ConfirmProposalRequest(BaseModel):
 
 def create_app(runtime: BuddysRuntime | None = None) -> FastAPI:
     app = FastAPI(title="Buddys Runtime API")
-    app.state.runtime = runtime or BuddysRuntime()
+    app.state.runtime = runtime or _runtime_from_env()
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -114,6 +116,15 @@ def _assistant_message(summary: str, requires_confirmation: bool) -> str:
 
 def _not_found(code: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": code})
+
+
+def _runtime_from_env() -> BuddysRuntime:
+    can_control_devices = os.getenv("BUDDYS_MOCK_CAN_CONTROL_DEVICES", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    return BuddysRuntime(adapter=MockHomeAdapter(can_control_devices=can_control_devices))
 
 
 app = create_app()

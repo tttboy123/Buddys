@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
+from buddys_api.adapters.mock_home import MockHomeAdapter
 from buddys_api.main import create_app
+from buddys_api.runtime import BuddysRuntime
 
 
 def make_client() -> TestClient:
@@ -115,3 +117,48 @@ def test_missing_resources_return_stable_404_detail_codes() -> None:
     missing_trace = client.get("/traces/missing_trace")
     assert missing_trace.status_code == 404
     assert missing_trace.json() == {"detail": {"code": "trace_not_found"}}
+
+
+def test_api_confirm_response_exposes_manual_fallback_instruction() -> None:
+    client = TestClient(create_app(BuddysRuntime(adapter=MockHomeAdapter(can_control_devices=False))))
+    buddy = client.post("/buddies", json={"user_id": "user_1"}).json()
+    message = client.post(
+        f"/buddies/{buddy['buddy_id']}/messages",
+        json={"user_id": "user_1", "message": "把客厅灯调暗"},
+    ).json()
+
+    confirm_response = client.post(
+        f"/proposals/{message['proposal_id']}/confirm",
+        json={"approved": True},
+    )
+
+    assert confirm_response.status_code == 200
+    confirmed = confirm_response.json()
+    assert confirmed["tool_result"]["status"] == "manual_required"
+    assert confirmed["tool_result"]["error_code"] == "adapter_unavailable"
+    assert confirmed["tool_result"]["user_instruction"] == "请手动把客厅灯调暗到约 35%。"
+    assert confirmed["tool_result"]["voice_prompt"] == "我现在无法直接控制客厅灯。请手动把客厅灯调暗到约 35%，完成后可以告诉我。"
+
+    trace = client.get(f"/traces/{message['trace_id']}").json()
+    assert trace["proposal"]["executed"] is False
+    assert trace["tool_result"]["status"] == "manual_required"
+
+
+def test_create_app_can_simulate_unavailable_device_control_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("BUDDYS_MOCK_CAN_CONTROL_DEVICES", "false")
+    client = TestClient(create_app())
+    buddy = client.post("/buddies", json={"user_id": "user_1"}).json()
+    message = client.post(
+        f"/buddies/{buddy['buddy_id']}/messages",
+        json={"user_id": "user_1", "message": "把客厅灯调暗"},
+    ).json()
+
+    confirm_response = client.post(
+        f"/proposals/{message['proposal_id']}/confirm",
+        json={"approved": True},
+    )
+
+    assert confirm_response.status_code == 200
+    confirmed = confirm_response.json()
+    assert confirmed["tool_result"]["status"] == "manual_required"
+    assert confirmed["tool_result"]["user_instruction"] == "请手动把客厅灯调暗到约 35%。"

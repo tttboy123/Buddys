@@ -8,6 +8,9 @@ from buddys_api.schemas import ToolCall, ToolResult
 class MockHomeAdapter:
     adapter_id = "mock_home"
 
+    def __init__(self, can_control_devices: bool = True) -> None:
+        self.can_control_devices = can_control_devices
+
     def execute(self, tool_call: ToolCall) -> ToolResult:
         if tool_call.tool_id == "mock_home.light" and tool_call.action == "set_brightness":
             return self._set_brightness(tool_call.args)
@@ -36,6 +39,18 @@ class MockHomeAdapter:
             )
 
         target = args.get("target", "light")
+        if not self.can_control_devices:
+            target_label = self._target_label(target)
+            user_instruction = f"请手动把{target_label}调暗到约 {brightness}%。"
+            return ToolResult(
+                status="manual_required",
+                output_summary=f"{target} cannot be controlled by the current adapter.",
+                error_code="adapter_unavailable",
+                latency_ms=0,
+                user_instruction=user_instruction,
+                voice_prompt=f"我现在无法直接控制{target_label}。请手动把{target_label}调暗到约 {brightness}%，完成后可以告诉我。",
+            )
+
         return ToolResult(
             status="success",
             output_summary=f"{target} brightness set to {brightness}%.",
@@ -74,3 +89,8 @@ class MockHomeAdapter:
             output_summary="Movie mode activated.",
             latency_ms=0,
         )
+
+    def _target_label(self, target: str) -> str:
+        if target == "living_room_light":
+            return "客厅灯"
+        return target

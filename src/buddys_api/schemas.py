@@ -64,10 +64,12 @@ class ToolCall(BaseModel):
 
 
 class ToolResult(BaseModel):
-    status: Literal["success", "failure", "skipped"]
+    status: Literal["success", "failure", "skipped", "manual_required"]
     output_summary: str
     error_code: str | None = None
     latency_ms: int | None = None
+    user_instruction: str | None = None
+    voice_prompt: str | None = None
 
 
 class Intent(BaseModel):

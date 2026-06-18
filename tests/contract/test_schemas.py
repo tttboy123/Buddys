@@ -4,6 +4,7 @@ from buddys_api.schemas import (
     Buddy,
     CostEvent,
     PermissionDecision,
+    ToolResult,
 )
 
 
@@ -50,6 +51,20 @@ def test_permission_decision_export_shape():
     )
 
     assert decision.model_dump()["policy_result"] == "require_confirmation"
+
+
+def test_tool_result_can_request_manual_user_action():
+    result = ToolResult(
+        status="manual_required",
+        output_summary="Adapter cannot control living room light.",
+        error_code="adapter_unavailable",
+        user_instruction="请手动把客厅灯调暗到约 35%。",
+        voice_prompt="我现在无法直接控制客厅灯。请手动把客厅灯调暗到约 35%，完成后可以告诉我。",
+    )
+
+    assert result.status == "manual_required"
+    assert "手动" in result.user_instruction
+    assert result.voice_prompt.startswith("我现在无法直接控制")
 
 
 def test_action_trace_and_cost_event_link_by_trace_id():
