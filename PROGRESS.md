@@ -1,7 +1,7 @@
 # Buddys Runtime MVP Progress
 
 Date: 2026-06-18
-Status: P0 runtime MVP verified locally
+Status: P0 runtime MVP verified locally and backed up to GitHub
 
 ## Summary
 
@@ -47,7 +47,7 @@ Latest local verification:
 Result:
 
 ```text
-26 passed, 1 warning in 0.13s
+26 passed, 1 warning in 0.17s
 ```
 
 HTTP smoke result:
@@ -70,9 +70,20 @@ The remaining warning is a FastAPI/Starlette TestClient upstream deprecation war
 - No durable database yet.
 - No TypeScript console yet.
 
+## GitHub
+
+Remote repository:
+
+```text
+git@github.com:tttboy123/Buddys.git
+https://github.com/tttboy123/Buddys
+```
+
+The remote includes the GitHub-created MIT `LICENSE`, merged into the local history before push.
+
 ## Next Steps
 
-1. Add a real GitHub remote after authentication is available.
-2. Replace in-memory stores with SQLite-backed repositories.
-3. Add a minimal Console UI for the same dim-light demo flow.
-4. Add Home Assistant adapter spike behind the existing ToolCall boundary.
+1. Replace in-memory stores with SQLite-backed repositories.
+2. Add a minimal Console UI for the same dim-light demo flow.
+3. Add Home Assistant adapter spike behind the existing ToolCall boundary.
+4. Add auth/BYOK/cost guardrails after the local trace/cost contract stabilizes.
