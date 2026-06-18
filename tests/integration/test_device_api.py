@@ -1,0 +1,321 @@
+from fastapi.testclient import TestClient
+
+from buddys_api.device_models import DeviceDesiredState
+from buddys_api.device_store import DeviceRegistry
+from buddys_api.main import create_app
+
+
+def make_client(store: DeviceRegistry | None = None) -> TestClient:
+    return TestClient(create_app(device_store=store))
+
+
+def test_pair_device_creates_device_agent_machine_and_binding() -> None:
+    client = make_client()
+    buddy = create_buddy(client)
+
+    response = client.post(
+        "/devices/device_body_001/pair",
+        json=pair_payload(buddy),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["device"]["device_id"] == "device_body_001"
+    assert body["device"]["pairing_state"] == "paired"
+    assert body["agent_machine"]["agent_machine_id"] == "agent_machine_home_mac"
+    assert body["binding"]["buddy_id"] == buddy["buddy_id"]
+    assert body["binding"]["role"] == "primary"
+
+    serialized = str(body).lower()
+    assert "secret" not in serialized
+    assert "provider_key" not in serialized
+    assert "adapter_token" not in serialized
+
+
+def test_heartbeat_updates_latest_device_health() -> None:
+    client = make_client()
+    pair_device(client)
+
+    response = client.post(
+        "/devices/device_body_001/heartbeat",
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-001",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["device_id"] == "device_body_001"
+    assert body["firmware_version"] == "0.1.0"
+    assert body["wifi_rssi"] == -55
+    assert body["current_state"] == "idle"
+
+
+def test_pair_device_rejects_unknown_buddy_and_owner_mismatch() -> None:
+    client = make_client()
+    unknown_response = client.post(
+        "/devices/device_body_001/pair",
+        json=pair_payload({"buddy_id": "missing_buddy", "space_id": "home"}, owner_user_id="user_demo"),
+    )
+    assert unknown_response.status_code == 404
+    assert unknown_response.json() == {"detail": {"code": "buddy_not_found"}}
+
+    buddy = create_buddy(client, user_id="user_demo")
+    mismatch_response = client.post(
+        "/devices/device_body_002/pair",
+        json=pair_payload(buddy, owner_user_id="other_user", idempotency_key="pair-002", pairing_token="pair-token-002"),
+    )
+    assert mismatch_response.status_code == 403
+    assert mismatch_response.json() == {"detail": {"code": "agent_machine_owner_mismatch"}}
+
+
+def test_pair_device_rejects_invalid_url_empty_fields_and_missing_pairing_token() -> None:
+    client = make_client()
+    buddy = create_buddy(client)
+
+    invalid_url = pair_payload(buddy)
+    invalid_url["agent_machine"]["endpoint"] = "not-a-url"
+    assert client.post("/devices/device_body_001/pair", json=invalid_url).status_code == 422
+
+    empty_key = pair_payload(buddy, idempotency_key="pair-002", pairing_token="pair-token-002")
+    empty_key["public_key"] = ""
+    assert client.post("/devices/device_body_002/pair", json=empty_key).status_code == 422
+
+    missing_pairing_token = pair_payload(buddy, idempotency_key="pair-003", pairing_token="pair-token-003")
+    missing_pairing_token.pop("pairing_token")
+    assert client.post("/devices/device_body_003/pair", json=missing_pairing_token).status_code == 422
+
+
+def test_pair_device_is_idempotent_for_duplicate_device_and_key() -> None:
+    store = DeviceRegistry()
+    client = make_client(store)
+    buddy = create_buddy(client)
+    payload = pair_payload(buddy)
+
+    first = client.post("/devices/device_body_001/pair", json=payload)
+    duplicate_payload = pair_payload(buddy)
+    duplicate_payload["public_key"] = "changed-device-public-key"
+    second = client.post("/devices/device_body_001/pair", json=duplicate_payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json() == first.json()
+    assert store.get_device("device_body_001").public_key == "device-public-key"
+
+
+def test_desired_state_endpoint_returns_manual_required_state() -> None:
+    store = DeviceRegistry()
+    store.set_desired_state(
+        DeviceDesiredState(
+            device_id="device_body_001",
+            state="manual_required",
+            revision=2,
+            display_text="请手动把客厅灯调暗到约 35%。",
+            manual_required=True,
+            user_instruction="请手动把客厅灯调暗到约 35%。",
+            source_trace_id="trace_001",
+        )
+    )
+    client = make_client(store)
+    pair_device(client)
+
+    response = client.get("/devices/device_body_001/desired-state")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "manual_required"
+    assert body["manual_required"] is True
+    assert body["user_instruction"] == "请手动把客厅灯调暗到约 35%。"
+
+
+def test_device_events_accept_all_p0_button_actions_without_executing_device_action() -> None:
+    store = DeviceRegistry()
+    client = make_client(store)
+    pair_device(client)
+
+    for event_type in ["approve", "reject", "ack", "manual_done"]:
+        response = client.post(
+            "/devices/device_body_001/events",
+            json={
+                "event_type": event_type,
+                "idempotency_key": f"event-{event_type}-001",
+                "payload": {"source": "button"},
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["event_type"] == event_type
+
+    assert [event.event_type for event in store.list_events("device_body_001")] == [
+        "approve",
+        "reject",
+        "ack",
+        "manual_done",
+    ]
+
+
+def test_device_event_duplicate_idempotency_returns_existing_event_without_append() -> None:
+    store = DeviceRegistry()
+    client = make_client(store)
+    pair_device(client)
+
+    first = client.post(
+        "/devices/device_body_001/events",
+        json={"event_type": "approve", "idempotency_key": "event-approve-001", "payload": {"source": "button"}},
+    )
+    second = client.post(
+        "/devices/device_body_001/events",
+        json={"event_type": "approve", "idempotency_key": "event-approve-001", "payload": {"source": "touch"}},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.json() == first.json()
+    assert len(store.list_events("device_body_001")) == 1
+
+
+def test_device_events_reject_unpaired_device_and_secret_like_payload() -> None:
+    client = make_client()
+
+    unpaired = client.post(
+        "/devices/missing_device/events",
+        json={"event_type": "approve", "idempotency_key": "event-001", "payload": {"source": "button"}},
+    )
+    assert unpaired.status_code == 404
+    assert unpaired.json() == {"detail": {"code": "device_not_found"}}
+
+    pair_device(client)
+    secret_payload = client.post(
+        "/devices/device_body_001/events",
+        json={
+            "event_type": "approve",
+            "idempotency_key": "event-secret-001",
+            "payload": {"nested": {"adapter_token": "plain-token"}},
+        },
+    )
+    assert secret_payload.status_code == 422
+
+
+def test_heartbeat_rejects_invalid_ranges_and_empty_firmware_version() -> None:
+    client = make_client()
+    pair_device(client)
+
+    for payload in [
+        {
+            "firmware_version": "",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-empty-fw",
+        },
+        {
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -128,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-low-rssi",
+        },
+        {
+            "firmware_version": "0.1.0",
+            "wifi_rssi": 1,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-high-rssi",
+        },
+        {
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": -1,
+            "current_state": "idle",
+            "idempotency_key": "hb-negative-uptime",
+        },
+    ]:
+        response = client.post("/devices/device_body_001/heartbeat", json=payload)
+        assert response.status_code == 422
+
+
+def test_heartbeat_duplicate_idempotency_returns_existing_heartbeat() -> None:
+    client = make_client()
+    pair_device(client)
+
+    first = client.post(
+        "/devices/device_body_001/heartbeat",
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-001",
+        },
+    )
+    second = client.post(
+        "/devices/device_body_001/heartbeat",
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -10,
+            "uptime_seconds": 999,
+            "current_state": "error",
+            "idempotency_key": "hb-001",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json() == first.json()
+
+
+def test_ota_check_is_read_only_and_reports_no_update_for_p0() -> None:
+    client = make_client()
+    pair_device(client)
+
+    response = client.get("/devices/device_body_001/ota/check")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "device_id": "device_body_001",
+        "update_available": False,
+        "current_version": "0.1.0",
+        "target_version": None,
+    }
+
+
+def pair_device(client: TestClient) -> None:
+    buddy = create_buddy(client)
+    response = client.post(
+        "/devices/device_body_001/pair",
+        json=pair_payload(buddy),
+    )
+    assert response.status_code == 201
+
+
+def create_buddy(client: TestClient, user_id: str = "user_demo") -> dict[str, object]:
+    response = client.post("/buddies", json={"user_id": user_id})
+    assert response.status_code == 201
+    return response.json()
+
+
+def pair_payload(
+    buddy: dict[str, object],
+    owner_user_id: str = "user_demo",
+    idempotency_key: str = "pair-001",
+    pairing_token: str = "pair-token-001",
+) -> dict[str, object]:
+    return {
+        "buddy_id": buddy["buddy_id"],
+        "space_id": buddy["space_id"],
+        "public_key": "device-public-key",
+        "firmware_version": "0.1.0",
+        "pairing_token": pairing_token,
+        "agent_machine": {
+            "agent_machine_id": "agent_machine_home_mac",
+            "owner_user_id": owner_user_id,
+            "machine_type": "local_mac",
+            "endpoint": "https://agent-machine.example.test",
+            "public_key": "agent-machine-public-key",
+            "runtime_version": "0.1.0",
+        },
+        "idempotency_key": idempotency_key,
+    }

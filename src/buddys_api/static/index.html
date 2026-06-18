@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Buddys Console</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell" data-surface="browser-console">
+      <header class="topbar" aria-label="Buddys runtime status">
+        <div>
+          <p class="eyebrow">// BUDDYS P0</p>
+          <h1>Buddys Console</h1>
+        </div>
+        <div class="status-strip" role="status">
+          <span id="runtimeHealth" class="status-pill">runtime checking</span>
+          <span>A-level confirmation</span>
+          <span id="monthCost">month cost ¥0.00</span>
+        </div>
+      </header>
+
+      <section class="layout">
+        <div class="primary-column">
+          <section class="panel overview" aria-labelledby="overviewTitle">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">// overview</p>
+                <h2 id="overviewTitle">Home Buddy</h2>
+              </div>
+              <button id="createBuddyButton" class="secondary-button" type="button">Create demo Buddy</button>
+            </div>
+            <div class="metric-grid">
+              <div>
+                <span class="metric-label">Space</span>
+                <strong id="buddySpace">Home</strong>
+              </div>
+              <div>
+                <span class="metric-label">State</span>
+                <strong id="buddyState">idle</strong>
+              </div>
+              <div>
+                <span class="metric-label">Tools</span>
+                <strong>3 connected</strong>
+              </div>
+              <div>
+                <span class="metric-label">Risk</span>
+                <strong id="riskState">none</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel live" aria-labelledby="liveTitle">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">// live</p>
+                <h2 id="liveTitle">Action proposal</h2>
+              </div>
+              <button id="runDemoButton" class="primary-button" type="button">Dim living room</button>
+            </div>
+            <div class="conversation">
+              <p><span>User</span> 把客厅灯调暗一点</p>
+              <p><span>Buddy</span> <strong id="assistantMessage">Ready to propose a safe A-level action.</strong></p>
+            </div>
+            <div class="proposal-card" id="proposalCard">
+              <p class="eyebrow">proposal</p>
+              <h3 id="proposalSummary">No action proposal yet</h3>
+              <dl>
+                <div><dt>Tool</dt><dd id="proposalTool">mock_home.light</dd></div>
+                <div><dt>Policy</dt><dd id="proposalPolicy">requires confirmation</dd></div>
+                <div><dt>Target</dt><dd>living_room_light</dd></div>
+              </dl>
+              <div class="button-row">
+                <button id="approveButton" class="primary-button" type="button" disabled>Approve</button>
+                <button id="resetButton" class="ghost-button" type="button">Reset</button>
+              </div>
+            </div>
+            <div class="manual-callout" id="manualFallback">
+              <p class="eyebrow">Manual fallback</p>
+              <p id="manualInstruction">If direct device control is unavailable, Buddys will ask the user to perform the action manually instead of reporting false success.</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="mobile-surface" data-surface="mobile-app" aria-label="Mobile app priority surface">
+          <p class="eyebrow">// mobile priority</p>
+          <h2>App review</h2>
+          <p id="mobileStatus">Home Buddy is idle. Run the demo to review and approve an A-level action.</p>
+          <div class="mobile-action-block">
+            <span>Proposal</span>
+            <strong id="mobileProposal">No action proposal yet</strong>
+          </div>
+          <div class="mobile-action-row">
+            <button id="mobileApproveButton" class="primary-button" type="button" disabled>Approve</button>
+            <p id="mobileManualInstruction">Manual instructions will appear here before trace and cost details.</p>
+          </div>
+        </section>
+
+        <aside class="side-column">
+          <section class="device-shell" aria-labelledby="deviceTitle" data-surface="hardware-display">
+            <div class="device-display" id="hardwareDisplay">
+              <p class="device-kicker">BUDDYS</p>
+              <h2 id="deviceTitle">Home Buddy</h2>
+              <div class="pixel-face" id="pixelFace">•_•</div>
+              <p id="deviceState">idle</p>
+              <p id="devicePrompt">ready at home</p>
+            </div>
+          </section>
+
+          <section class="panel trace" aria-labelledby="traceTitle">
+            <p class="eyebrow">// Action Trace</p>
+            <h2 id="traceTitle">Action Trace</h2>
+            <ol id="traceTimeline" class="timeline">
+              <li>Waiting for demo run.</li>
+            </ol>
+          </section>
+
+          <section class="panel cost" aria-labelledby="costTitle">
+            <p class="eyebrow">// cost governance</p>
+            <h2 id="costTitle">Cost</h2>
+            <div class="cost-grid">
+              <div><span>Model</span><strong id="modelCost">¥0.00</strong></div>
+              <div><span>Tokens</span><strong id="tokenUsage">0</strong></div>
+              <div><span>Heartbeat</span><strong>healthy</strong></div>
+              <div><span>Budget</span><strong>within limit</strong></div>
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

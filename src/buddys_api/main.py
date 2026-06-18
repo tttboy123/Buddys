@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from buddys_api.adapters.mock_home import MockHomeAdapter
+from buddys_api.device_routes import router as device_router
+from buddys_api.device_store import DeviceRegistry
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import ActionTrace, Buddy, CostEvent
+
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class CreateBuddyRequest(BaseModel):
@@ -34,13 +42,24 @@ class ConfirmProposalRequest(BaseModel):
         raise ValueError("confirmation decision is required")
 
 
-def create_app(runtime: BuddysRuntime | None = None) -> FastAPI:
+def create_app(runtime: BuddysRuntime | None = None, device_store: DeviceRegistry | None = None) -> FastAPI:
     app = FastAPI(title="Buddys Runtime API")
     app.state.runtime = runtime or _runtime_from_env()
+    app.state.device_store = device_store or DeviceRegistry()
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.include_router(device_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/console", response_class=HTMLResponse)
+    def console() -> str:
+        return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+    @app.get("/favicon.ico", status_code=204)
+    def favicon() -> Response:
+        return Response(status_code=204)
 
     @app.post("/buddies", status_code=201)
     def create_buddy(request: CreateBuddyRequest) -> Buddy:
