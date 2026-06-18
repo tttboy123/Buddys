@@ -4,3 +4,7 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
+# Local Codex context and progress records are kept outside GitHub.
+AGENTS.md
+PROGRESS.md
+docs/superpowers/
