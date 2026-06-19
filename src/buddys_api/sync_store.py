@@ -122,12 +122,14 @@ def build_snapshot(
     user_id: str | None,
     usage_store: Any | None = None,
     agent_store: Any | None = None,
+    state_memory_store: Any | None = None,
 ) -> dict[str, Any]:
     buddies = buddy_store.list_for_user(user_id, created_via="auth") if user_id else buddy_store.list_legacy()
     visible_buddy_ids = {buddy.buddy_id for buddy in buddies}
     visible_device_ids = {
         device.device_id for device in device_store.list_devices() if device.buddy_id in visible_buddy_ids
     }
+    visible_traces = [trace for trace in traces if trace.buddy_id in visible_buddy_ids]
     costs = [cost for cost in cost_events if cost.buddy_id in visible_buddy_ids]
     visible_agent_machine_ids = {
         binding.agent_machine_id
@@ -167,10 +169,16 @@ def build_snapshot(
             for event in device_store.list_all_events()
             if event.device_id in visible_device_ids
         ],
-        "traces": [_trace_summary(trace) for trace in traces if trace.buddy_id in visible_buddy_ids],
+        "traces": [_trace_summary(trace) for trace in visible_traces],
         "cost_summary": _cost_summary(costs),
         "plan_usage": _plan_usage_summary(buddies=buddies, user_id=user_id, usage_store=usage_store),
         "agents": _agent_summaries(agent_store=agent_store, user_id=user_id),
+        "state_memory": _state_memory_projection(
+            buddies=buddies,
+            user_id=user_id,
+            state_memory_store=state_memory_store,
+            traces=visible_traces,
+        ),
     }
 
 
@@ -314,3 +322,120 @@ def _agent_summaries(agent_store: Any | None, user_id: str | None) -> list[dict[
     if agent_store is None or user_id is None:
         return []
     return [_safe_dump(agent) for agent in agent_store.list_for_user(user_id)]
+
+
+def _state_memory_projection(
+    *,
+    buddies: list[Any],
+    user_id: str | None,
+    state_memory_store: Any | None,
+    traces: list[Any],
+) -> dict[str, Any]:
+    if state_memory_store is None or user_id is None:
+        return _empty_state_memory_projection()
+
+    items_by_buddy_models: dict[str, list[Any]] = {}
+    pending_by_buddy_models: dict[str, list[Any]] = {}
+    summary_by_buddy: dict[str, dict[str, Any]] = {}
+
+    for buddy in buddies:
+        items = state_memory_store.list_items(user_id=user_id, buddy_id=buddy.buddy_id)
+        pending = state_memory_store.list_pending_proposals(user_id=user_id, buddy_id=buddy.buddy_id)
+        items_by_buddy_models[buddy.buddy_id] = items
+        pending_by_buddy_models[buddy.buddy_id] = pending
+        summary_by_buddy[buddy.buddy_id] = {
+            "confirmed_item_count": len(items),
+            "pending_proposal_count": len(pending),
+            "last_state_change_at": _latest_timestamp(
+                [item.updated_at for item in items] + [proposal.updated_at for proposal in pending]
+            ),
+        }
+
+    return {
+        "items_by_buddy": {
+            buddy_id: [_safe_dump(item) for item in items]
+            for buddy_id, items in items_by_buddy_models.items()
+            if items
+        },
+        "pending_proposals_by_buddy": {
+            buddy_id: [_safe_dump(proposal) for proposal in proposals]
+            for buddy_id, proposals in pending_by_buddy_models.items()
+            if proposals
+        },
+        "summary_by_buddy": {
+            buddy_id: summary
+            for buddy_id, summary in summary_by_buddy.items()
+            if summary["confirmed_item_count"] or summary["pending_proposal_count"]
+        },
+        "latest_query_by_buddy": _latest_state_memory_queries_by_buddy(
+            traces=traces,
+            items_by_buddy=items_by_buddy_models,
+        ),
+    }
+
+
+def _empty_state_memory_projection() -> dict[str, Any]:
+    return {
+        "items_by_buddy": {},
+        "pending_proposals_by_buddy": {},
+        "summary_by_buddy": {},
+        "latest_query_by_buddy": {},
+    }
+
+
+def _latest_state_memory_queries_by_buddy(
+    *,
+    traces: list[Any],
+    items_by_buddy: dict[str, list[Any]],
+) -> dict[str, dict[str, Any]]:
+    latest_by_buddy: dict[str, Any] = {}
+    for trace in traces:
+        proposal = getattr(trace, "proposal", None)
+        intent = getattr(trace, "intent", None)
+        if proposal is None or intent is None:
+            continue
+        if intent.name != "state_memory_query" or proposal.action_type != "reply_only":
+            continue
+        latest_by_buddy[trace.buddy_id] = trace
+
+    query_by_buddy: dict[str, dict[str, Any]] = {}
+    for buddy_id, trace in latest_by_buddy.items():
+        args = getattr(trace.proposal, "args", {}) or {}
+        item_index = {
+            item.item_id: item
+            for item in items_by_buddy.get(buddy_id, [])
+        }
+        evidence_item_ids = list(args.get("evidence_item_ids", []))
+        query_by_buddy[buddy_id] = {
+            "trace_id": trace.trace_id,
+            "question": args.get("question"),
+            "answer_type": args.get("answer_type"),
+            "subject_name": args.get("subject_name"),
+            "summary": trace.proposal.summary,
+            "evidence_item_ids": evidence_item_ids,
+            "evidence_items": [
+                _state_memory_evidence_summary(item_index[item_id])
+                for item_id in evidence_item_ids
+                if item_id in item_index
+            ],
+            "missing_items": list(args.get("missing_items", [])),
+            "has_item": args.get("has_item"),
+            "created_at": trace.created_at,
+        }
+    return query_by_buddy
+
+
+def _state_memory_evidence_summary(item: Any) -> dict[str, Any]:
+    return {
+        "item_id": item.item_id,
+        "name": item.name,
+        "quantity": item.quantity,
+        "unit": item.unit,
+        "status": item.status,
+        "source": item.source,
+        "last_seen_at": item.last_seen_at,
+    }
+
+
+def _latest_timestamp(timestamps: list[str]) -> str | None:
+    return max(timestamps) if timestamps else None

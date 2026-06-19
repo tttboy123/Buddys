@@ -229,6 +229,79 @@ dd {
   margin-top: 14px;
 }
 
+.state-memory-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  min-width: min(100%, 420px);
+}
+
+.state-memory-summary-grid div,
+.state-memory-block,
+.state-memory-query {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.state-memory-summary-grid div {
+  padding: 12px;
+}
+
+.state-memory-summary-grid strong {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.state-memory-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.state-memory-block,
+.state-memory-query {
+  padding: 14px;
+}
+
+.state-memory-block h3,
+.state-memory-query h3 {
+  margin-bottom: 10px;
+}
+
+.state-memory-query {
+  margin-top: 12px;
+}
+
+.state-memory-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.state-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.state-list li {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.state-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .mobile-action-block {
   display: grid;
   gap: 5px;
@@ -331,7 +404,9 @@ dd {
   .layout,
   .metric-grid,
   .cost-grid,
-  dl {
+  dl,
+  .state-memory-summary-grid,
+  .state-memory-columns {
     grid-template-columns: 1fr;
   }
 

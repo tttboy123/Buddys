@@ -31,8 +31,32 @@ function setTimeline(items) {
   });
 }
 
+function renderTextList(targetId, items, emptyText, formatter) {
+  const list = $(targetId);
+  list.replaceChildren();
+  if (!items.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = emptyText;
+    list.appendChild(emptyItem);
+    return;
+  }
+  items.forEach((item) => {
+    const listItem = document.createElement("li");
+    listItem.textContent = formatter(item);
+    list.appendChild(listItem);
+  });
+}
+
 function money(value) {
   return `¥${value.toFixed(4)}`;
+}
+
+function formatQuantity(quantity, unit) {
+  if (quantity === null || quantity === undefined) {
+    return unit || "-";
+  }
+  const normalized = Number.isInteger(quantity) ? String(quantity) : String(quantity);
+  return `${normalized}${unit || ""}`;
 }
 
 function costEventCny(cost) {
@@ -88,6 +112,8 @@ async function loadSyncSnapshot() {
   $("modelCost").textContent = money(
     ((costSummary.model_cost_usd || 0) + (costSummary.tool_cost_usd || 0) + (costSummary.log_cost_usd || 0)) * 7.25,
   );
+
+  renderStateMemory(snapshot.state_memory || {}, state.buddyId);
 }
 
 async function ensureBuddy() {
@@ -153,6 +179,45 @@ async function approveProposal() {
   const costs = await requestJson("/cost-events");
   renderResult(trace, costs.cost_events);
   await loadSyncSnapshot();
+}
+
+function renderStateMemory(snapshotStateMemory, selectedBuddyId) {
+  const projection = snapshotStateMemory || {};
+  const items = selectedBuddyId ? projection.items_by_buddy?.[selectedBuddyId] || [] : [];
+  const pending = selectedBuddyId ? projection.pending_proposals_by_buddy?.[selectedBuddyId] || [] : [];
+  const summary = selectedBuddyId ? projection.summary_by_buddy?.[selectedBuddyId] || {} : {};
+  const latestQuery = selectedBuddyId ? projection.latest_query_by_buddy?.[selectedBuddyId] || null : null;
+
+  $("stateMemoryConfirmedCount").textContent = String(summary.confirmed_item_count || items.length || 0);
+  $("stateMemoryPendingCount").textContent = String(summary.pending_proposal_count || pending.length || 0);
+  $("stateMemoryLastUpdated").textContent = summary.last_state_change_at || "-";
+
+  renderTextList("stateMemoryConfirmedList", items, "No confirmed items yet.", (item) => {
+    return `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status}`;
+  });
+  renderTextList("stateMemoryPendingList", pending, "No pending proposals.", (proposal) => {
+    return `${proposal.content} · ${proposal.deltas.length} delta`;
+  });
+
+  if (!latestQuery) {
+    $("stateMemoryQuerySummary").textContent = "No state-memory query yet.";
+    $("stateMemoryQueryMeta").textContent = "Evidence will appear here once a state-memory query has been asked.";
+    renderTextList("stateMemoryEvidenceList", [], "No evidence items captured.", () => "");
+    return;
+  }
+
+  $("stateMemoryQuerySummary").textContent = latestQuery.summary;
+  $("stateMemoryQueryMeta").textContent = latestQuery.missing_items?.length
+    ? `${latestQuery.question} · missing ${latestQuery.missing_items.join(" / ")}`
+    : `${latestQuery.question} · evidence ready`;
+  renderTextList(
+    "stateMemoryEvidenceList",
+    latestQuery.evidence_items || [],
+    latestQuery.evidence_item_ids?.length ? "Evidence item details unavailable." : "No evidence items captured.",
+    (item) => {
+      return `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status}`;
+    },
+  );
 }
 
 function renderResult(trace, costEvents) {

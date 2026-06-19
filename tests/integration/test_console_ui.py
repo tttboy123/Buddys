@@ -115,3 +115,32 @@ def test_console_uses_sync_snapshot_as_shared_state_source() -> None:
 
     assert "/sync/snapshot" in js_response.text
     assert "loadSyncSnapshot" in js_response.text
+
+
+def test_console_html_contains_separate_state_memory_sections() -> None:
+    client = make_client()
+
+    response = client.get("/console")
+
+    assert "State Memory" in response.text
+    assert "Confirmed state" in response.text
+    assert "Pending proposals" in response.text
+    assert "Latest query" in response.text
+    assert 'id="stateMemoryConfirmedList"' in response.text
+    assert 'id="stateMemoryPendingList"' in response.text
+    assert 'id="stateMemoryEvidenceList"' in response.text
+
+
+def test_console_assets_render_state_memory_from_sync_snapshot_without_html_injection() -> None:
+    client = make_client()
+
+    js_response = client.get("/static/app.js")
+
+    assert "renderStateMemory" in js_response.text
+    assert "state_memory" in js_response.text
+    assert "items_by_buddy" in js_response.text
+    assert "pending_proposals_by_buddy" in js_response.text
+    assert "latest_query_by_buddy" in js_response.text
+    assert "item.name" in js_response.text
+    assert "proposal.content" in js_response.text
+    assert "renderTextList" in js_response.text

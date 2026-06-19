@@ -40,3 +40,4 @@ class SyncSnapshot(BaseModel):
     cost_summary: dict[str, Any]
     plan_usage: dict[str, Any] = Field(default_factory=dict)
     agents: list[dict[str, Any]] = Field(default_factory=list)
+    state_memory: dict[str, Any] = Field(default_factory=dict)

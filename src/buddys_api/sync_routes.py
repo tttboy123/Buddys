@@ -28,6 +28,7 @@ def sync_snapshot(
         user_id=user_id,
         usage_store=getattr(fastapi_request.app.state, "usage_store", None),
         agent_store=getattr(fastapi_request.app.state, "agent_store", None),
+        state_memory_store=getattr(fastapi_request.app.state, "state_memory_store", None),
     )
 
 

@@ -80,6 +80,55 @@
               <p id="manualInstruction">If direct device control is unavailable, Buddys will ask the user to perform the action manually instead of reporting false success.</p>
             </div>
           </section>
+
+          <section class="panel state-memory" aria-labelledby="stateMemoryTitle">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">// state memory</p>
+                <h2 id="stateMemoryTitle">State Memory</h2>
+              </div>
+              <div class="state-memory-summary-grid">
+                <div>
+                  <span class="metric-label">Confirmed</span>
+                  <strong id="stateMemoryConfirmedCount">0</strong>
+                </div>
+                <div>
+                  <span class="metric-label">Pending</span>
+                  <strong id="stateMemoryPendingCount">0</strong>
+                </div>
+                <div>
+                  <span class="metric-label">Last update</span>
+                  <strong id="stateMemoryLastUpdated">-</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="state-memory-columns">
+              <section class="state-memory-block" aria-labelledby="stateMemoryConfirmedTitle">
+                <h3 id="stateMemoryConfirmedTitle">Confirmed state</h3>
+                <ul id="stateMemoryConfirmedList" class="state-list">
+                  <li>No confirmed items yet.</li>
+                </ul>
+              </section>
+
+              <section class="state-memory-block" aria-labelledby="stateMemoryPendingTitle">
+                <h3 id="stateMemoryPendingTitle">Pending proposals</h3>
+                <ul id="stateMemoryPendingList" class="state-list">
+                  <li>No pending proposals.</li>
+                </ul>
+              </section>
+            </div>
+
+            <section class="state-memory-query" aria-labelledby="stateMemoryQueryTitle">
+              <p class="eyebrow">// latest query</p>
+              <h3 id="stateMemoryQueryTitle">Latest query</h3>
+              <p id="stateMemoryQuerySummary">No state-memory query yet.</p>
+              <p id="stateMemoryQueryMeta" class="state-memory-meta">Evidence will appear here once a state-memory query has been asked.</p>
+              <ul id="stateMemoryEvidenceList" class="state-list">
+                <li>No evidence items captured.</li>
+              </ul>
+            </section>
+          </section>
         </div>
 
         <section class="mobile-surface" data-surface="mobile-app" aria-label="Mobile app priority surface">
