@@ -188,6 +188,90 @@ def test_sync_snapshot_and_events_do_not_leak_auth_owned_buddies_to_unauthentica
     assert legacy_buddy["buddy_id"] not in str(owner_events)
 
 
+def test_sync_snapshot_includes_owner_agents_but_not_for_unauthenticated_or_other_users(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    owner_token = register(client, "owner@example.com")
+    other_token = register(client, "other@example.com")
+    agent_response = client.post(
+        "/agents",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Verifier Agent",
+            "role": "verifier",
+            "status": "online",
+            "version": "0.4.0",
+            "metadata": {"suite": "phase4", "api_key": "sk-should-not-sync"},
+            "capabilities": {"checks": ["isolation"], "public_key": "public-key-should-not-sync"},
+        },
+    )
+    assert agent_response.status_code == 201
+    agent = agent_response.json()
+
+    unauth_snapshot = client.get("/sync/snapshot").json()
+    owner_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    other_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {other_token}"}).json()
+
+    assert unauth_snapshot["agents"] == []
+    assert other_snapshot["agents"] == []
+    assert len(owner_snapshot["agents"]) == 1
+    assert owner_snapshot["agents"][0]["agent_id"] == agent["agent_id"]
+    assert owner_snapshot["agents"][0]["metadata"] == {"suite": "phase4"}
+    assert owner_snapshot["agents"][0]["capabilities"] == {"checks": ["isolation"]}
+
+    for snapshot in (unauth_snapshot, owner_snapshot, other_snapshot):
+        serialized = str(snapshot)
+        assert "sk-should-not-sync" not in serialized
+        assert "public-key-should-not-sync" not in serialized
+        assert "api_key" not in serialized.lower()
+        assert "public_key" not in serialized.lower()
+
+
+def test_sync_snapshot_and_events_omit_agent_secret_like_values(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    owner_token = register(client, "owner@example.com")
+    agent_response = client.post(
+        "/agents",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Verifier Agent",
+            "role": "verifier",
+            "status": "online",
+            "version": "0.4.0",
+            "metadata": {
+                "notes": "sk-safe-key-secret-sentinel",
+                "debug_id": "sk-safe-key-sentinel-123456",
+                "region": "local",
+                "health": "ok",
+            },
+            "capabilities": {
+                "labels": [
+                    "safe-label",
+                    "sk-safe-key-secret-sentinel",
+                    "sk-safe-key-sentinel-123456",
+                    "password sentinel",
+                ],
+                "flags": [True, 7],
+            },
+        },
+    )
+    assert agent_response.status_code == 201
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    events = client.get(
+        "/sync/events",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        params={"since_revision": 0},
+    ).json()
+
+    assert snapshot["agents"][0]["metadata"] == {"region": "local", "health": "ok"}
+    assert snapshot["agents"][0]["capabilities"] == {"labels": ["safe-label"], "flags": [True, 7]}
+    for payload in (snapshot, events):
+        serialized = str(payload)
+        assert "sk-safe-key-secret-sentinel" not in serialized
+        assert "sk-safe-key-sentinel-123456" not in serialized
+        assert "password sentinel" not in serialized
+
+
 def register(client: TestClient, email: str) -> str:
     response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
     assert response.status_code == 201

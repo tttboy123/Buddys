@@ -121,6 +121,7 @@ def build_snapshot(
     cost_events: Iterable[CostEvent],
     user_id: str | None,
     usage_store: Any | None = None,
+    agent_store: Any | None = None,
 ) -> dict[str, Any]:
     buddies = buddy_store.list_for_user(user_id, created_via="auth") if user_id else buddy_store.list_legacy()
     visible_buddy_ids = {buddy.buddy_id for buddy in buddies}
@@ -169,7 +170,7 @@ def build_snapshot(
         "traces": [_trace_summary(trace) for trace in traces if trace.buddy_id in visible_buddy_ids],
         "cost_summary": _cost_summary(costs),
         "plan_usage": _plan_usage_summary(buddies=buddies, user_id=user_id, usage_store=usage_store),
-        "agents": [],
+        "agents": _agent_summaries(agent_store=agent_store, user_id=user_id),
     }
 
 
@@ -307,3 +308,9 @@ def _safe_plan_usage_dump(summary: dict[str, Any]) -> dict[str, Any]:
         "model_usage",
     }
     return {key: value for key, value in summary.items() if key in allowed_fields}
+
+
+def _agent_summaries(agent_store: Any | None, user_id: str | None) -> list[dict[str, Any]]:
+    if agent_store is None or user_id is None:
+        return []
+    return [_safe_dump(agent) for agent in agent_store.list_for_user(user_id)]

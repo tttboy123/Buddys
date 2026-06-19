@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from buddys_api.adapters.mock_home import MockHomeAdapter
+from buddys_api.agent_routes import router as agent_router
+from buddys_api.agent_store import AgentStore
 from buddys_api.auth_routes import router as auth_router
 from buddys_api.auth_store import AuthStore
 from buddys_api.buddy_store import BuddyStore
@@ -65,6 +67,7 @@ def create_app(
     app.state.sync_store = SyncStore(connection)
     app.state.provider_store = ProviderStore(connection)
     app.state.usage_store = UsageStore(connection)
+    app.state.agent_store = AgentStore(connection)
     app.state.runtime = runtime or _runtime_from_env(app.state.buddy_store)
     if runtime is not None and runtime.buddy_store is None:
         runtime.buddy_store = app.state.buddy_store
@@ -76,6 +79,7 @@ def create_app(
     app.include_router(device_router)
     app.include_router(sync_router)
     app.include_router(provider_router)
+    app.include_router(agent_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

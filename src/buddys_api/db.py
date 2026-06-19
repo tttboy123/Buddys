@@ -115,6 +115,37 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_usage_ledger_provider_model
             ON usage_ledger(user_id, usage_month, provider_id, model_id);
+
+        CREATE TABLE IF NOT EXISTS agents (
+            agent_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN (
+                'runtime',
+                'hardware_simulator',
+                'cost_agent',
+                'verifier',
+                'doc_progress',
+                'adapter'
+            )),
+            status TEXT NOT NULL CHECK (status IN (
+                'starting',
+                'online',
+                'degraded',
+                'offline',
+                'error'
+            )),
+            version TEXT,
+            metadata_json TEXT NOT NULL,
+            capabilities_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_seen TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agents_user_id
+            ON agents(user_id, created_at);
         """
     )
     buddy_columns = {
