@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 
 from buddys_api.main import create_app
@@ -5,6 +7,12 @@ from buddys_api.main import create_app
 
 def make_client() -> TestClient:
     return TestClient(create_app())
+
+
+def extract_function_body(script: str, function_name: str) -> str:
+    match = re.search(rf"function {function_name}\([^)]*\) \{{(?P<body>.*?)\n\}}", script, re.S)
+    assert match is not None
+    return match.group("body")
 
 
 def test_console_route_serves_html() -> None:
@@ -144,3 +152,76 @@ def test_console_assets_render_state_memory_from_sync_snapshot_without_html_inje
     assert "item.name" in js_response.text
     assert "proposal.content" in js_response.text
     assert "renderTextList" in js_response.text
+
+
+def test_console_html_contains_auth_workspace_and_state_memory_controls() -> None:
+    client = make_client()
+
+    response = client.get("/console")
+
+    assert 'id="authStatus"' in response.text
+    assert 'id="authEmailInput"' in response.text
+    assert 'id="authPasswordInput"' in response.text
+    assert 'id="authRegisterButton"' in response.text
+    assert 'id="authLoginButton"' in response.text
+    assert 'id="authLogoutButton"' in response.text
+    assert 'id="authBuddySelect"' in response.text
+    assert 'id="createMyBuddyButton"' in response.text
+    assert 'id="captureSourceSelect"' in response.text
+    assert 'id="captureContentInput"' in response.text
+    assert 'id="submitCaptureButton"' in response.text
+    assert 'id="queryQuestionInput"' in response.text
+    assert 'id="submitQueryButton"' in response.text
+    assert 'id="proposalReviewList"' in response.text
+    assert 'id="proposalCorrectionInput"' in response.text
+    assert 'id="submitCorrectionButton"' in response.text
+
+
+def test_console_assets_support_session_aware_auth_and_state_memory_client_flow() -> None:
+    client = make_client()
+
+    js_response = client.get("/static/app.js")
+
+    assert "localStorage" in js_response.text
+    assert "buddysAccessToken" in js_response.text
+    assert "Authorization" in js_response.text
+    assert "/auth/register" in js_response.text
+    assert "/auth/login" in js_response.text
+    assert "/auth/me" in js_response.text
+    assert "/auth/logout" in js_response.text
+    assert "/me/buddies" in js_response.text
+    assert "/sync/snapshot" in js_response.text
+    assert "/state-memory/captures/" in js_response.text
+    assert "/state-memory/query" in js_response.text
+    assert "/state-memory/proposals/" in js_response.text
+    assert "proposalReviewList" in js_response.text
+    assert "proposalCorrectionInput" in js_response.text
+
+
+def test_console_assets_clear_stale_auth_shell_on_logout_and_session_expiry() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    clear_session_body = extract_function_body(script, "clearSession")
+
+    assert "function resetBuddyOverview()" in script
+    assert '$("overviewTitle").textContent = "Home Buddy";' in script
+    assert '$("buddySpace").textContent = "Home";' in script
+    assert '$("buddyState").textContent = "idle";' in script
+    assert "resetBuddyOverview();" in clear_session_body
+    assert "resetLegacyDemoRail();" in clear_session_body
+    assert 'setAuthStatus("Stored session expired. Please login again.", "error");\n    await loadSyncSnapshot();' in script
+
+
+def test_console_assets_reset_legacy_demo_proposal_state_when_auth_session_starts() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    save_session_body = extract_function_body(script, "saveSession")
+    reset_demo_body = extract_function_body(script, "resetLegacyDemoRail")
+
+    assert "resetLegacyDemoRail();" in save_session_body
+    assert "state.proposalId = null;" in reset_demo_body
+    assert '$("proposalSummary").textContent = "No action proposal yet";' in reset_demo_body
+    assert '$("approveButton").disabled = true;' in reset_demo_body
+    assert 'setMobileReview("No action proposal yet", "Manual instructions will appear here before trace and cost details.", false);' in reset_demo_body

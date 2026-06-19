@@ -22,6 +22,47 @@
 
       <section class="layout">
         <div class="primary-column">
+          <section class="panel auth-workspace" aria-labelledby="authWorkspaceTitle">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">// auth workspace</p>
+                <h2 id="authWorkspaceTitle">Authenticated client flow</h2>
+              </div>
+              <p id="authStatus" class="status-note">Signed out. Login to use state memory.</p>
+            </div>
+            <div class="auth-grid">
+              <label class="field">
+                <span>Email</span>
+                <input id="authEmailInput" type="email" placeholder="owner@example.com" />
+              </label>
+              <label class="field">
+                <span>Password</span>
+                <input id="authPasswordInput" type="password" placeholder="correct horse battery staple" />
+              </label>
+              <label class="field">
+                <span>Display name</span>
+                <input id="authDisplayNameInput" type="text" placeholder="Home owner" />
+              </label>
+              <div class="button-row auth-actions">
+                <button id="authRegisterButton" class="secondary-button" type="button">Register</button>
+                <button id="authLoginButton" class="primary-button" type="button">Login</button>
+                <button id="authLogoutButton" class="ghost-button" type="button" disabled>Logout</button>
+              </div>
+            </div>
+            <div class="workspace-grid">
+              <label class="field">
+                <span>My buddy</span>
+                <select id="authBuddySelect" disabled>
+                  <option value="">No auth buddy</option>
+                </select>
+              </label>
+              <div class="button-row">
+                <button id="createMyBuddyButton" class="secondary-button" type="button" disabled>Create my Buddy</button>
+                <button id="refreshWorkspaceButton" class="ghost-button" type="button">Refresh</button>
+              </div>
+            </div>
+          </section>
+
           <section class="panel overview" aria-labelledby="overviewTitle">
             <div class="panel-header">
               <div>
@@ -103,6 +144,41 @@
               </div>
             </div>
 
+            <section class="state-memory-workflow" aria-labelledby="stateMemoryWorkflowTitle">
+              <p class="eyebrow">// workflow</p>
+              <h3 id="stateMemoryWorkflowTitle">Capture and query</h3>
+              <p id="stateMemoryWorkspaceStatus" class="state-memory-meta">
+                Login and select a Buddy before submitting state-memory actions.
+              </p>
+              <div class="workflow-grid">
+                <label class="field">
+                  <span>Capture source</span>
+                  <select id="captureSourceSelect" disabled>
+                    <option value="voice">voice</option>
+                    <option value="conversation">conversation</option>
+                    <option value="console">console</option>
+                  </select>
+                </label>
+                <label class="field field-wide">
+                  <span>Capture content</span>
+                  <textarea
+                    id="captureContentInput"
+                    rows="3"
+                    placeholder="例如：我买了五个鸡蛋和一瓶牛奶"
+                    disabled
+                  ></textarea>
+                </label>
+                <button id="submitCaptureButton" class="primary-button" type="button" disabled>Submit capture</button>
+              </div>
+              <div class="workflow-grid query-grid">
+                <label class="field field-wide">
+                  <span>Query</span>
+                  <input id="queryQuestionInput" type="text" placeholder="例如：有鸡蛋吗" disabled />
+                </label>
+                <button id="submitQueryButton" class="secondary-button" type="button" disabled>Ask query</button>
+              </div>
+            </section>
+
             <div class="state-memory-columns">
               <section class="state-memory-block" aria-labelledby="stateMemoryConfirmedTitle">
                 <h3 id="stateMemoryConfirmedTitle">Confirmed state</h3>
@@ -118,6 +194,26 @@
                 </ul>
               </section>
             </div>
+
+            <section class="state-memory-query" aria-labelledby="proposalReviewTitle">
+              <p class="eyebrow">// proposal review</p>
+              <h3 id="proposalReviewTitle">Pending review</h3>
+              <ul id="proposalReviewList" class="state-list">
+                <li>No proposal selected for review.</li>
+              </ul>
+              <label class="field field-wide">
+                <span>Correction JSON</span>
+                <textarea
+                  id="proposalCorrectionInput"
+                  rows="6"
+                  placeholder='[{"name":"鸡蛋","action":"set","quantity":6,"unit":"个","status":"available"}]'
+                  disabled
+                ></textarea>
+              </label>
+              <div class="button-row">
+                <button id="submitCorrectionButton" class="secondary-button" type="button" disabled>Apply correction</button>
+              </div>
+            </section>
 
             <section class="state-memory-query" aria-labelledby="stateMemoryQueryTitle">
               <p class="eyebrow">// latest query</p>
