@@ -7,271 +7,218 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="shell" data-surface="browser-console">
-      <header class="topbar" aria-label="Buddys runtime status">
-        <div>
-          <p class="eyebrow">// BUDDYS P0</p>
-          <h1>Buddys Console</h1>
-        </div>
-        <div class="status-strip" role="status">
-          <span id="runtimeHealth" class="status-pill">runtime checking</span>
-          <span>A-level confirmation</span>
-          <span id="monthCost">month cost ¥0.00</span>
-        </div>
-      </header>
-
-      <section class="layout">
-        <div class="primary-column">
-          <section class="panel auth-workspace" aria-labelledby="authWorkspaceTitle">
-            <div class="panel-header">
-              <div>
-                <p class="eyebrow">// auth workspace</p>
-                <h2 id="authWorkspaceTitle">Authenticated client flow</h2>
-              </div>
-              <p id="authStatus" class="status-note">Signed out. Login to use state memory.</p>
-            </div>
-            <div class="auth-grid">
-              <label class="field">
-                <span>Email</span>
-                <input id="authEmailInput" type="email" placeholder="owner@example.com" />
-              </label>
-              <label class="field">
-                <span>Password</span>
-                <input id="authPasswordInput" type="password" placeholder="correct horse battery staple" />
-              </label>
-              <label class="field">
-                <span>Display name</span>
-                <input id="authDisplayNameInput" type="text" placeholder="Home owner" />
-              </label>
-              <div class="button-row auth-actions">
-                <button id="authRegisterButton" class="secondary-button" type="button">Register</button>
-                <button id="authLoginButton" class="primary-button" type="button">Login</button>
-                <button id="authLogoutButton" class="ghost-button" type="button" disabled>Logout</button>
-              </div>
-            </div>
-            <div class="workspace-grid">
-              <label class="field">
-                <span>My buddy</span>
-                <select id="authBuddySelect" disabled>
-                  <option value="">No auth buddy</option>
-                </select>
-              </label>
-              <div class="button-row">
-                <button id="createMyBuddyButton" class="secondary-button" type="button" disabled>Create my Buddy</button>
-                <button id="refreshWorkspaceButton" class="ghost-button" type="button">Refresh</button>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel overview" aria-labelledby="overviewTitle">
-            <div class="panel-header">
-              <div>
-                <p class="eyebrow">// overview</p>
-                <h2 id="overviewTitle">Home Buddy</h2>
-              </div>
-              <button id="createBuddyButton" class="secondary-button" type="button">Create demo Buddy</button>
-            </div>
-            <div class="metric-grid">
-              <div>
-                <span class="metric-label">Space</span>
-                <strong id="buddySpace">Home</strong>
-              </div>
-              <div>
-                <span class="metric-label">State</span>
-                <strong id="buddyState">idle</strong>
-              </div>
-              <div>
-                <span class="metric-label">Tools</span>
-                <strong>3 connected</strong>
-              </div>
-              <div>
-                <span class="metric-label">Risk</span>
-                <strong id="riskState">none</strong>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel live" aria-labelledby="liveTitle">
-            <div class="panel-header">
-              <div>
-                <p class="eyebrow">// live</p>
-                <h2 id="liveTitle">Action proposal</h2>
-              </div>
-              <button id="runDemoButton" class="primary-button" type="button">Dim living room</button>
-            </div>
-            <div class="conversation">
-              <p><span>User</span> 把客厅灯调暗一点</p>
-              <p><span>Buddy</span> <strong id="assistantMessage">Ready to propose a safe A-level action.</strong></p>
-            </div>
-            <div class="proposal-card" id="proposalCard">
-              <p class="eyebrow">proposal</p>
-              <h3 id="proposalSummary">No action proposal yet</h3>
-              <dl>
-                <div><dt>Tool</dt><dd id="proposalTool">mock_home.light</dd></div>
-                <div><dt>Policy</dt><dd id="proposalPolicy">requires confirmation</dd></div>
-                <div><dt>Target</dt><dd>living_room_light</dd></div>
-              </dl>
-              <div class="button-row">
-                <button id="approveButton" class="primary-button" type="button" disabled>Approve</button>
-                <button id="resetButton" class="ghost-button" type="button">Reset</button>
-              </div>
-            </div>
-            <div class="manual-callout" id="manualFallback">
-              <p class="eyebrow">Manual fallback</p>
-              <p id="manualInstruction">If direct device control is unavailable, Buddys will ask the user to perform the action manually instead of reporting false success.</p>
-            </div>
-          </section>
-
-          <section class="panel state-memory" aria-labelledby="stateMemoryTitle">
-            <div class="panel-header">
-              <div>
-                <p class="eyebrow">// state memory</p>
-                <h2 id="stateMemoryTitle">State Memory</h2>
-              </div>
-              <div class="state-memory-summary-grid">
-                <div>
-                  <span class="metric-label">Confirmed</span>
-                  <strong id="stateMemoryConfirmedCount">0</strong>
-                </div>
-                <div>
-                  <span class="metric-label">Pending</span>
-                  <strong id="stateMemoryPendingCount">0</strong>
-                </div>
-                <div>
-                  <span class="metric-label">Last update</span>
-                  <strong id="stateMemoryLastUpdated">-</strong>
-                </div>
-              </div>
-            </div>
-
-            <section class="state-memory-workflow" aria-labelledby="stateMemoryWorkflowTitle">
-              <p class="eyebrow">// workflow</p>
-              <h3 id="stateMemoryWorkflowTitle">Capture and query</h3>
-              <p id="stateMemoryWorkspaceStatus" class="state-memory-meta">
-                Login and select a Buddy before submitting state-memory actions.
-              </p>
-              <div class="workflow-grid">
-                <label class="field">
-                  <span>Capture source</span>
-                  <select id="captureSourceSelect" disabled>
-                    <option value="voice">voice</option>
-                    <option value="conversation">conversation</option>
-                    <option value="console">console</option>
-                  </select>
-                </label>
-                <label class="field field-wide">
-                  <span>Capture content</span>
-                  <textarea
-                    id="captureContentInput"
-                    rows="3"
-                    placeholder="例如：我买了五个鸡蛋和一瓶牛奶"
-                    disabled
-                  ></textarea>
-                </label>
-                <button id="submitCaptureButton" class="primary-button" type="button" disabled>Submit capture</button>
-              </div>
-              <div class="workflow-grid query-grid">
-                <label class="field field-wide">
-                  <span>Query</span>
-                  <input id="queryQuestionInput" type="text" placeholder="例如：有鸡蛋吗" disabled />
-                </label>
-                <button id="submitQueryButton" class="secondary-button" type="button" disabled>Ask query</button>
-              </div>
-            </section>
-
-            <div class="state-memory-columns">
-              <section class="state-memory-block" aria-labelledby="stateMemoryConfirmedTitle">
-                <h3 id="stateMemoryConfirmedTitle">Confirmed state</h3>
-                <ul id="stateMemoryConfirmedList" class="state-list">
-                  <li>No confirmed items yet.</li>
-                </ul>
-              </section>
-
-              <section class="state-memory-block" aria-labelledby="stateMemoryPendingTitle">
-                <h3 id="stateMemoryPendingTitle">Pending proposals</h3>
-                <ul id="stateMemoryPendingList" class="state-list">
-                  <li>No pending proposals.</li>
-                </ul>
-              </section>
-            </div>
-
-            <section class="state-memory-query" aria-labelledby="proposalReviewTitle">
-              <p class="eyebrow">// proposal review</p>
-              <h3 id="proposalReviewTitle">Pending review</h3>
-              <ul id="proposalReviewList" class="state-list">
-                <li>No proposal selected for review.</li>
-              </ul>
-              <label class="field field-wide">
-                <span>Correction JSON</span>
-                <textarea
-                  id="proposalCorrectionInput"
-                  rows="6"
-                  placeholder='[{"name":"鸡蛋","action":"set","quantity":6,"unit":"个","status":"available"}]'
-                  disabled
-                ></textarea>
-              </label>
-              <div class="button-row">
-                <button id="submitCorrectionButton" class="secondary-button" type="button" disabled>Apply correction</button>
-              </div>
-            </section>
-
-            <section class="state-memory-query" aria-labelledby="stateMemoryQueryTitle">
-              <p class="eyebrow">// latest query</p>
-              <h3 id="stateMemoryQueryTitle">Latest query</h3>
-              <p id="stateMemoryQuerySummary">No state-memory query yet.</p>
-              <p id="stateMemoryQueryMeta" class="state-memory-meta">Evidence will appear here once a state-memory query has been asked.</p>
-              <ul id="stateMemoryEvidenceList" class="state-list">
-                <li>No evidence items captured.</li>
-              </ul>
-            </section>
-          </section>
-        </div>
-
-        <section class="mobile-surface" data-surface="mobile-app" aria-label="Mobile app priority surface">
-          <p class="eyebrow">// mobile priority</p>
-          <h2>App review</h2>
-          <p id="mobileStatus">Home Buddy is idle. Run the demo to review and approve an A-level action.</p>
-          <div class="mobile-action-block">
-            <span>Proposal</span>
-            <strong id="mobileProposal">No action proposal yet</strong>
+    <main id="experienceShell">
+      <section id="authRail" class="experience-panel" aria-labelledby="authWorkspaceTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Buddys</p>
+            <h1 id="authWorkspaceTitle">My state-memory Buddy</h1>
           </div>
-          <div class="mobile-action-row">
-            <button id="mobileApproveButton" class="primary-button" type="button" disabled>Approve</button>
-            <p id="mobileManualInstruction">Manual instructions will appear here before trace and cost details.</p>
+          <p id="authStatus" class="support-copy">Signed out. Login to use state memory.</p>
+        </div>
+        <div class="auth-grid">
+          <label class="field">
+            <span>Email</span>
+            <input id="authEmailInput" type="email" placeholder="owner@example.com" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="authPasswordInput" type="password" placeholder="correct horse battery staple" />
+          </label>
+          <label class="field">
+            <span>Display name</span>
+            <input id="authDisplayNameInput" type="text" placeholder="Kitchen owner" />
+          </label>
+          <div class="button-row auth-actions">
+            <button id="authRegisterButton" class="secondary-button" type="button">Register</button>
+            <button id="authLoginButton" class="primary-button" type="button">Login</button>
+            <button id="authLogoutButton" class="ghost-button" type="button" disabled>Logout</button>
           </div>
-        </section>
+        </div>
+        <div class="workspace-grid">
+          <label class="field">
+            <span>My Buddy</span>
+            <select id="authBuddySelect" disabled>
+              <option value="">No auth buddy</option>
+            </select>
+          </label>
+          <button id="createMyBuddyButton" class="secondary-button" type="button" disabled>Create my Buddy</button>
+        </div>
+      </section>
 
-        <aside class="side-column">
-          <section class="device-shell" aria-labelledby="deviceTitle" data-surface="hardware-display">
-            <div class="device-display" id="hardwareDisplay">
-              <p class="device-kicker">BUDDYS</p>
-              <h2 id="deviceTitle">Home Buddy</h2>
-              <div class="pixel-face" id="pixelFace">•_•</div>
-              <p id="deviceState">idle</p>
-              <p id="devicePrompt">ready at home</p>
+      <section id="buddyHero" class="experience-panel" aria-labelledby="buddyNameHeading">
+        <p id="buddyGreeting" class="eyebrow">Buddy is here</p>
+        <h2 id="buddyNameHeading">My Buddy</h2>
+        <p id="buddySummaryLine" class="support-copy">
+          Tell Buddy what you bought or used, then ask what is still at home.
+        </p>
+        <div class="hero-meta">
+          <div>
+            <span class="field-label">Space</span>
+            <strong id="overviewTitle">Home Buddy</strong>
+          </div>
+          <div>
+            <span class="field-label">Location</span>
+            <strong id="buddySpace">Home</strong>
+          </div>
+          <div>
+            <span class="field-label">Status</span>
+            <strong id="buddyState">idle</strong>
+          </div>
+        </div>
+      </section>
+
+      <section id="confirmedStatePanel" class="experience-panel" aria-labelledby="confirmedStateTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">What Buddy remembers</p>
+            <h2 id="confirmedStateTitle">Confirmed state</h2>
+          </div>
+          <div class="state-summary">
+            <div>
+              <span class="field-label">Confirmed</span>
+              <strong id="stateMemoryConfirmedCount">0</strong>
             </div>
-          </section>
+            <div>
+              <span class="field-label">Pending</span>
+              <strong id="stateMemoryPendingCount">0</strong>
+            </div>
+            <div>
+              <span class="field-label">Updated</span>
+              <strong id="stateMemoryLastUpdated">-</strong>
+            </div>
+          </div>
+        </div>
+        <p id="stateMemoryWorkspaceStatus" class="support-copy">
+          Login and select a Buddy before submitting state-memory actions.
+        </p>
+        <ul id="stateMemoryConfirmedList" class="state-list">
+          <li>No confirmed state yet.</li>
+        </ul>
+      </section>
 
-          <section class="panel trace" aria-labelledby="traceTitle">
-            <p class="eyebrow">// Action Trace</p>
+      <section id="captureComposer" class="experience-panel" aria-labelledby="captureComposerTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Capture</p>
+            <h2 id="captureComposerTitle">Tell Buddy what changed</h2>
+          </div>
+        </div>
+        <p class="support-copy">Write what you bought, used, or ran out of. Buddy will turn it into a reviewable proposal.</p>
+        <textarea
+          id="captureTextInput"
+          rows="4"
+          placeholder="例如：我买了五个鸡蛋和一瓶牛奶"
+          disabled
+        ></textarea>
+        <div class="button-row capture-actions">
+          <button id="captureSubmitButton" class="primary-button" type="button" disabled>Save to Buddy</button>
+        </div>
+        <div class="coming-soon-row">
+          <span class="coming-soon-chip">Voice capture coming soon</span>
+          <span class="coming-soon-chip">Photo capture coming soon</span>
+        </div>
+      </section>
+
+      <section id="proposalInbox" class="experience-panel" aria-labelledby="proposalInboxTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Review</p>
+            <h2 id="proposalInboxTitle">Pending proposals</h2>
+          </div>
+        </div>
+        <ul id="stateMemoryPendingList" class="state-list">
+          <li>No pending proposals.</li>
+        </ul>
+        <ul id="proposalReviewList" class="state-list">
+          <li>No proposal selected for review.</li>
+        </ul>
+        <label class="field">
+          <span>Correction JSON</span>
+          <textarea
+            id="proposalCorrectionInput"
+            rows="6"
+            placeholder='[{"name":"鸡蛋","action":"set","quantity":6,"unit":"个","status":"available"}]'
+            disabled
+          ></textarea>
+        </label>
+        <div class="button-row">
+          <button id="submitCorrectionButton" class="secondary-button" type="button" disabled>Apply correction</button>
+        </div>
+      </section>
+
+      <section id="queryComposer" class="experience-panel" aria-labelledby="queryComposerTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Query</p>
+            <h2 id="queryComposerTitle">Ask Buddy</h2>
+          </div>
+        </div>
+        <label class="field">
+          <span>Question</span>
+          <input id="queryTextInput" type="text" placeholder="例如：有鸡蛋吗" disabled />
+        </label>
+        <div class="button-row">
+          <button id="querySubmitButton" class="secondary-button" type="button" disabled>Ask Buddy</button>
+        </div>
+      </section>
+
+      <section id="latestAnswerPanel" class="experience-panel" aria-labelledby="latestAnswerTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Latest answer</p>
+            <h2 id="latestAnswerTitle">Answer and evidence</h2>
+          </div>
+        </div>
+        <p id="stateMemoryQuerySummary">No state-memory query yet.</p>
+        <p id="stateMemoryQueryMeta" class="support-copy">Evidence will appear here once a state-memory query has been asked.</p>
+        <ul id="stateMemoryEvidenceList" class="state-list">
+          <li>No evidence items captured.</li>
+        </ul>
+      </section>
+
+      <section id="proactiveMemoryCard" class="experience-panel" aria-labelledby="proactiveTitle" hidden>
+        <p class="eyebrow">Buddy noticed</p>
+        <h2 id="proactiveTitle">Buddy noticed</h2>
+        <p id="proactiveMessage"></p>
+        <p id="proactiveBasis" class="support-copy"></p>
+      </section>
+
+      <details id="detailsDrawer" class="details-drawer">
+        <summary>Why this answer / details</summary>
+        <div class="details-stack">
+          <section class="experience-panel detail-panel" aria-labelledby="traceTitle">
+            <p class="eyebrow">Action Trace</p>
             <h2 id="traceTitle">Action Trace</h2>
             <ol id="traceTimeline" class="timeline">
-              <li>Waiting for demo run.</li>
+              <li>Waiting for state-memory activity.</li>
             </ol>
           </section>
 
-          <section class="panel cost" aria-labelledby="costTitle">
-            <p class="eyebrow">// cost governance</p>
-            <h2 id="costTitle">Cost</h2>
-            <div class="cost-grid">
-              <div><span>Model</span><strong id="modelCost">¥0.00</strong></div>
-              <div><span>Tokens</span><strong id="tokenUsage">0</strong></div>
-              <div><span>Heartbeat</span><strong>healthy</strong></div>
-              <div><span>Budget</span><strong>within limit</strong></div>
+          <section class="experience-panel detail-panel" aria-labelledby="costTitle">
+            <p class="eyebrow">Cost</p>
+            <h2 id="costTitle">Cost snapshot</h2>
+            <div class="detail-metrics">
+              <div>
+                <span class="field-label">Runtime</span>
+                <strong id="runtimeHealth">runtime checking</strong>
+              </div>
+              <div>
+                <span class="field-label">Tokens</span>
+                <strong id="tokenUsage">0</strong>
+              </div>
+              <div>
+                <span class="field-label">Last run</span>
+                <strong id="modelCost">¥0.00</strong>
+              </div>
+              <div>
+                <span class="field-label">Month</span>
+                <strong id="monthCost">month cost ¥0.00</strong>
+              </div>
             </div>
           </section>
-        </aside>
-      </section>
+        </div>
+      </details>
     </main>
     <script src="/static/app.js"></script>
   </body>

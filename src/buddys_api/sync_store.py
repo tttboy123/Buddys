@@ -371,6 +371,7 @@ def _state_memory_projection(
             traces=traces,
             items_by_buddy=items_by_buddy_models,
         ),
+        "proactive_hint_by_buddy": _proactive_state_memory_hints_by_buddy(items_by_buddy_models),
     }
 
 
@@ -380,6 +381,7 @@ def _empty_state_memory_projection() -> dict[str, Any]:
         "pending_proposals_by_buddy": {},
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
+        "proactive_hint_by_buddy": {},
     }
 
 
@@ -434,6 +436,36 @@ def _state_memory_evidence_summary(item: Any) -> dict[str, Any]:
         "status": item.status,
         "source": item.source,
         "last_seen_at": item.last_seen_at,
+    }
+
+
+def _proactive_state_memory_hints_by_buddy(items_by_buddy: dict[str, list[Any]]) -> dict[str, dict[str, Any]]:
+    hints: dict[str, dict[str, Any]] = {}
+    for buddy_id, items in items_by_buddy.items():
+        hint = _build_state_memory_hint(items)
+        if hint is not None:
+            hints[buddy_id] = hint
+    return hints
+
+
+def _build_state_memory_hint(items: list[Any]) -> dict[str, Any] | None:
+    low_items = [
+        item
+        for item in items
+        if item.status == "active" and item.quantity is not None and item.quantity <= 2
+    ]
+    if not low_items:
+        return None
+    low_items.sort(key=lambda item: (item.quantity, item.updated_at, item.name))
+    item = low_items[0]
+    return {
+        "kind": "consumption_inference",
+        "message": f"{item.name} might be running low. Add it to the next shopping pass?",
+        "basis": {
+            "item_ids": [item.item_id],
+            "item_names": [item.name],
+            "last_seen_at": item.last_seen_at,
+        },
     }
 
 

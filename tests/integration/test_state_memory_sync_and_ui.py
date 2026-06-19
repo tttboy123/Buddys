@@ -67,12 +67,14 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
         "pending_proposals_by_buddy": {},
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
+        "proactive_hint_by_buddy": {},
     }
     assert unauth_snapshot["state_memory"] == {
         "items_by_buddy": {},
         "pending_proposals_by_buddy": {},
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
+        "proactive_hint_by_buddy": {},
     }
     assert buddy_id not in str(other_snapshot)
     assert buddy_id not in str(unauth_snapshot)
@@ -82,3 +84,32 @@ def register(client: TestClient, email: str) -> str:
     response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
     assert response.status_code == 201
     return response.json()["access_token"]
+
+
+def test_sync_snapshot_projects_single_traceable_proactive_memory_hint(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=1,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    hint = snapshot["state_memory"]["proactive_hint_by_buddy"][buddy["buddy_id"]]
+
+    assert hint["message"]
+    assert hint["basis"]["item_names"] == ["鸡蛋"]
+    assert hint["kind"] == "consumption_inference"
