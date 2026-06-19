@@ -120,6 +120,7 @@ def build_snapshot(
     traces: Iterable[Any],
     cost_events: Iterable[CostEvent],
     user_id: str | None,
+    usage_store: Any | None = None,
 ) -> dict[str, Any]:
     buddies = buddy_store.list_for_user(user_id, created_via="auth") if user_id else buddy_store.list_legacy()
     visible_buddy_ids = {buddy.buddy_id for buddy in buddies}
@@ -167,7 +168,7 @@ def build_snapshot(
         ],
         "traces": [_trace_summary(trace) for trace in traces if trace.buddy_id in visible_buddy_ids],
         "cost_summary": _cost_summary(costs),
-        "plan_usage": {},
+        "plan_usage": _plan_usage_summary(buddies=buddies, user_id=user_id, usage_store=usage_store),
         "agents": [],
     }
 
@@ -276,3 +277,33 @@ def _cost_summary(cost_events: list[CostEvent]) -> dict[str, Any]:
         "tool_cost_usd": sum(event.tool_cost_usd for event in cost_events),
         "log_cost_usd": sum(event.log_cost_usd for event in cost_events),
     }
+
+
+def _plan_usage_summary(buddies: list[Any], user_id: str | None, usage_store: Any | None) -> dict[str, Any]:
+    if usage_store is None:
+        return {}
+    target_user_id = user_id
+    if target_user_id is None:
+        visible_user_ids = sorted({buddy.user_id for buddy in buddies})
+        if len(visible_user_ids) != 1:
+            return {}
+        target_user_id = visible_user_ids[0]
+    return _safe_plan_usage_dump(usage_store.usage_summary(target_user_id).model_dump(mode="json"))
+
+
+def _safe_plan_usage_dump(summary: dict[str, Any]) -> dict[str, Any]:
+    allowed_fields = {
+        "user_id",
+        "plan_id",
+        "plan_display_name",
+        "monthly_token_limit",
+        "hard_limit",
+        "byok",
+        "usage_month",
+        "used_tokens",
+        "remaining_tokens",
+        "over_limit",
+        "provider_usage",
+        "model_usage",
+    }
+    return {key: value for key, value in summary.items() if key in allowed_fields}

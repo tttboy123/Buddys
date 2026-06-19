@@ -16,10 +16,13 @@ from buddys_api.buddy_store import BuddyStore
 from buddys_api.db import connect_db, initialize_database
 from buddys_api.device_routes import router as device_router
 from buddys_api.device_store import DeviceRegistry
+from buddys_api.provider_routes import router as provider_router
+from buddys_api.provider_store import ProviderStore
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import ActionTrace, Buddy, CostEvent
 from buddys_api.sync_routes import router as sync_router
 from buddys_api.sync_store import SyncStore
+from buddys_api.token_plan import TokenPlanLimitExceeded, UsageStore
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -60,14 +63,19 @@ def create_app(
     app.state.auth_store = AuthStore(connection)
     app.state.buddy_store = BuddyStore(connection)
     app.state.sync_store = SyncStore(connection)
+    app.state.provider_store = ProviderStore(connection)
+    app.state.usage_store = UsageStore(connection)
     app.state.runtime = runtime or _runtime_from_env(app.state.buddy_store)
     if runtime is not None and runtime.buddy_store is None:
         runtime.buddy_store = app.state.buddy_store
+    if app.state.runtime.usage_store is None:
+        app.state.runtime.usage_store = app.state.usage_store
     app.state.device_store = device_store or DeviceRegistry()
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(auth_router)
     app.include_router(device_router)
     app.include_router(sync_router)
+    app.include_router(provider_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -113,6 +121,18 @@ def create_app(
             raise _not_found("buddy_not_found") from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail={"code": "buddy_access_denied"}) from exc
+        except TokenPlanLimitExceeded as exc:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "token_plan_limit_exceeded",
+                    "plan_id": exc.summary.plan_id,
+                    "used_tokens": exc.summary.used_tokens,
+                    "monthly_token_limit": exc.summary.monthly_token_limit,
+                    "attempted_tokens": exc.attempted_tokens,
+                    "usage_scope": "legacy_demo",
+                },
+            ) from exc
 
         trace = app.state.runtime.trace_store.get(proposal.trace_id)
         sync_event = app.state.sync_store.append_event(
@@ -137,6 +157,8 @@ def create_app(
             "requires_confirmation": proposal.requires_confirmation,
             "cost_event_ids": trace.cost_refs,
             "state_revision": sync_event.revision,
+            "usage_scope": "legacy_demo",
+            "usage_todo": "auth message route will attach usage to the authenticated user in a later phase",
         }
 
     @app.post("/proposals/{proposal_id}/confirm")

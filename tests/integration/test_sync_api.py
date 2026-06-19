@@ -120,7 +120,10 @@ def test_sync_snapshot_and_events_include_legacy_runtime_device_trace_and_cost_s
     assert snapshot["traces"][0]["trace_id"] == confirm["trace_id"]
     assert snapshot["cost_summary"]["event_count"] == 1
     assert snapshot["cost_summary"]["total_tokens"] > 0
-    assert snapshot["plan_usage"] == {}
+    assert snapshot["plan_usage"]["user_id"] == "user_demo"
+    assert snapshot["plan_usage"]["plan_id"] == "free"
+    assert snapshot["plan_usage"]["used_tokens"] == snapshot["cost_summary"]["total_tokens"]
+    assert "api_key" not in str(snapshot["plan_usage"]).lower()
     assert snapshot["agents"] == []
 
     events_response = client.get("/sync/events", params={"since_revision": 0})

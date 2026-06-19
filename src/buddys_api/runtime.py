@@ -15,6 +15,7 @@ from buddys_api.schemas import (
     new_id,
     now_iso,
 )
+from buddys_api.token_plan import UsageStore
 from buddys_api.trace_store import TraceStore
 
 
@@ -27,6 +28,7 @@ class BuddysRuntime:
         trace_store: TraceStore | None = None,
         cost_meter: CostMeter | None = None,
         buddy_store: BuddyStore | None = None,
+        usage_store: UsageStore | None = None,
     ) -> None:
         self.provider = provider or MockProvider()
         self.adapter = adapter or MockHomeAdapter()
@@ -34,6 +36,7 @@ class BuddysRuntime:
         self.trace_store = trace_store or TraceStore()
         self.cost_meter = cost_meter or CostMeter()
         self.buddy_store = buddy_store
+        self.usage_store = usage_store
         self._buddies: dict[str, Buddy] = {}
         self._proposals: dict[str, ActionProposal] = {}
 
@@ -72,13 +75,26 @@ class BuddysRuntime:
         plan = self.provider.plan(text=text, buddy_id=buddy.buddy_id, trace_id=trace_id)
         proposal = plan.proposal
         decision = self.policy.evaluate(proposal, user_confirmation=None)
+        input_tokens = len(text)
+        output_tokens = len(proposal.summary)
+        if self.usage_store is not None:
+            self.usage_store.record_usage(
+                user_id=user_id,
+                trace_id=trace_id,
+                buddy_id=buddy.buddy_id,
+                provider_id=self.provider.provider,
+                model_id=self.provider.model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                source="legacy_message",
+            )
         cost_event = self.cost_meter.record_model_call(
             trace_id=trace_id,
             buddy_id=buddy.buddy_id,
             provider=self.provider.provider,
             model=self.provider.model,
-            input_tokens=len(text),
-            output_tokens=len(proposal.summary),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
         trace = ActionTrace(
@@ -94,8 +110,8 @@ class BuddysRuntime:
             model_usage=ModelUsage(
                 provider=self.provider.provider,
                 model=self.provider.model,
-                input_tokens=len(text),
-                output_tokens=len(proposal.summary),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 latency_ms=0,
             ),
             cost_refs=[cost_event.cost_event_id],

@@ -69,6 +69,52 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_sync_events_visibility_revision
             ON sync_events(visibility, actor_user_id, revision);
+
+        CREATE TABLE IF NOT EXISTS provider_configs (
+            user_id TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            provider_type TEXT NOT NULL CHECK (provider_type IN ('mock', 'openai_compatible')),
+            base_url TEXT,
+            api_key_env_var TEXT,
+            default_model TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, provider_id),
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_provider_configs_user_id
+            ON provider_configs(user_id, provider_id);
+
+        CREATE TABLE IF NOT EXISTS token_plan_assignments (
+            user_id TEXT PRIMARY KEY,
+            plan_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS usage_ledger (
+            usage_event_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            trace_id TEXT,
+            buddy_id TEXT,
+            provider_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL CHECK (input_tokens >= 0),
+            output_tokens INTEGER NOT NULL CHECK (output_tokens >= 0),
+            total_tokens INTEGER NOT NULL CHECK (total_tokens >= 0),
+            source TEXT NOT NULL,
+            usage_month TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_usage_ledger_user_month
+            ON usage_ledger(user_id, usage_month, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_usage_ledger_provider_model
+            ON usage_ledger(user_id, usage_month, provider_id, model_id);
         """
     )
     buddy_columns = {

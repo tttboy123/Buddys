@@ -26,6 +26,7 @@ def sync_snapshot(
         traces=runtime.trace_store.list(),
         cost_events=runtime.cost_meter.list(),
         user_id=user_id,
+        usage_store=getattr(fastapi_request.app.state, "usage_store", None),
     )
 
 
