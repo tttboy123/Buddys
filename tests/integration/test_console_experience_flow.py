@@ -46,6 +46,8 @@ def test_console_experience_flow_contract_matches_auth_state_memory_path(tmp_pat
     assert state_memory["summary_by_buddy"][buddy_id]["confirmed_item_count"] == 1
     assert state_memory["latest_query_by_buddy"][buddy_id]["question"] == "有鸡蛋吗"
     assert state_memory["latest_query_by_buddy"][buddy_id]["evidence_items"][0]["name"] == "鸡蛋"
+    assert state_memory["latest_query_by_buddy"][buddy_id]["evidence_items"][0]["source"] == "conversation"
+    assert state_memory["latest_query_by_buddy"][buddy_id]["evidence_items"][0]["last_seen_at"]
     assert "proactive_hint_by_buddy" in state_memory
 
 

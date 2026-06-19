@@ -119,6 +119,15 @@ function renderTextList(targetId, items, emptyText, formatter) {
   });
 }
 
+function appendLine(container, text, className = "") {
+  const line = document.createElement("span");
+  if (className) {
+    line.className = className;
+  }
+  line.textContent = text;
+  container.appendChild(line);
+}
+
 function selectedBuddy() {
   return state.workspace.buddies.find((buddy) => buddy.buddy_id === state.workspace.buddyId) || null;
 }
@@ -355,7 +364,8 @@ function renderLatestAnswer() {
     "stateMemoryEvidenceList",
     latestQuery.evidence_items || [],
     latestQuery.evidence_item_ids?.length ? "Evidence item details unavailable." : "No evidence items captured.",
-    (item) => `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status}`,
+    (item) =>
+      `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status} · ${item.source} · ${item.last_seen_at}`,
   );
 }
 
@@ -374,6 +384,7 @@ function currentProactiveHint() {
 function renderProactiveMemoryCard() {
   const hint = currentProactiveHint();
   $("proactiveMemoryCard").hidden = !hint;
+  $("dismissProactiveHintButton").disabled = !hint;
   if (!hint) {
     return;
   }
@@ -382,8 +393,53 @@ function renderProactiveMemoryCard() {
   $("proactiveBasis").textContent = `Based on ${hint.basis.item_names.join(" / ")}`;
 }
 
+function dismissProactiveHint() {
+  const hint = currentProactiveHint();
+  if (!hint) {
+    return;
+  }
+  state.ui.dismissedHintKey = hint.hintKey;
+  renderProactiveMemoryCard();
+}
+
+function renderAnswerBasisPanel() {
+  const latestQuery = state.workspace.latestQuery;
+  const list = $("answerBasisEvidenceList");
+  list.replaceChildren();
+
+  if (!latestQuery) {
+    $("answerBasisQuestion").textContent = "No current answer basis.";
+    $("answerBasisSummary").textContent = "Ask Buddy something to inspect evidence details.";
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "No answer evidence yet.";
+    list.appendChild(emptyItem);
+    return;
+  }
+
+  $("answerBasisQuestion").textContent = `${latestQuery.question} · ${latestQuery.answer_type}`;
+  $("answerBasisSummary").textContent = latestQuery.missing_items?.length
+    ? `${latestQuery.summary} Missing: ${latestQuery.missing_items.join(" / ")}`
+    : latestQuery.summary;
+
+  if (!(latestQuery.evidence_items || []).length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "No answer evidence yet.";
+    list.appendChild(emptyItem);
+    return;
+  }
+
+  latestQuery.evidence_items.forEach((item) => {
+    const entry = document.createElement("li");
+    appendLine(entry, `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status}`);
+    appendLine(entry, `Source: ${item.source}`, "evidence-line");
+    appendLine(entry, `Last seen: ${item.last_seen_at}`, "evidence-line");
+    list.appendChild(entry);
+  });
+}
+
 function renderDetailsDrawer() {
   $("detailsDrawer").open = state.ui.detailsOpen;
+  renderAnswerBasisPanel();
 
   const timelineItems = state.workspace.traces.slice(-5).map((trace) => {
     const status = trace.tool_result_status || trace.permission_policy_result || "captured";
@@ -536,22 +592,36 @@ async function loadAuthWorkspace() {
 }
 
 function projectWorkspace(snapshot) {
-  state.workspace.stateRevision = snapshot.state_revision || 0;
-  state.workspace.buddies = snapshot.buddies || [];
-  if (state.workspace.buddies.length && !state.workspace.buddyId) {
-    state.workspace.buddyId = state.workspace.buddies[0].buddy_id;
-  }
+  if (!isAuthenticated()) {
+    state.workspace.stateRevision = 0;
+    state.workspace.buddies = [];
+    state.workspace.buddyId = null;
+    state.workspace.confirmedItems = [];
+    state.workspace.pendingProposals = [];
+    state.workspace.latestQuery = null;
+    state.workspace.proactiveHint = null;
+    state.workspace.summary = {};
+    state.workspace.traces = [];
+    state.workspace.costSummary = {};
+    state.ui.proactiveHint = null;
+  } else {
+    state.workspace.stateRevision = snapshot.state_revision || 0;
+    state.workspace.buddies = snapshot.buddies || [];
+    if (state.workspace.buddies.length && !state.workspace.buddyId) {
+      state.workspace.buddyId = state.workspace.buddies[0].buddy_id;
+    }
 
-  const buddyId = state.workspace.buddyId;
-  const stateMemory = snapshot.state_memory || {};
-  state.workspace.confirmedItems = buddyId ? stateMemory.items_by_buddy?.[buddyId] || [] : [];
-  state.workspace.pendingProposals = buddyId ? stateMemory.pending_proposals_by_buddy?.[buddyId] || [] : [];
-  state.workspace.latestQuery = buddyId ? stateMemory.latest_query_by_buddy?.[buddyId] || null : null;
-  state.workspace.proactiveHint = buddyId ? stateMemory.proactive_hint_by_buddy?.[buddyId] || null : null;
-  state.workspace.summary = buddyId ? stateMemory.summary_by_buddy?.[buddyId] || {} : {};
-  state.workspace.traces = snapshot.traces || [];
-  state.workspace.costSummary = snapshot.cost_summary || {};
-  state.ui.proactiveHint = state.workspace.proactiveHint;
+    const buddyId = state.workspace.buddyId;
+    const stateMemory = snapshot.state_memory || {};
+    state.workspace.confirmedItems = buddyId ? stateMemory.items_by_buddy?.[buddyId] || [] : [];
+    state.workspace.pendingProposals = buddyId ? stateMemory.pending_proposals_by_buddy?.[buddyId] || [] : [];
+    state.workspace.latestQuery = buddyId ? stateMemory.latest_query_by_buddy?.[buddyId] || null : null;
+    state.workspace.proactiveHint = buddyId ? stateMemory.proactive_hint_by_buddy?.[buddyId] || null : null;
+    state.workspace.summary = buddyId ? stateMemory.summary_by_buddy?.[buddyId] || {} : {};
+    state.workspace.traces = snapshot.traces || [];
+    state.workspace.costSummary = snapshot.cost_summary || {};
+    state.ui.proactiveHint = state.workspace.proactiveHint;
+  }
 
   if (state.ui.selectedProposalId) {
     const stillPresent = state.workspace.pendingProposals.some(
@@ -693,6 +763,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("captureSubmitButton").addEventListener("click", submitCapture);
   $("querySubmitButton").addEventListener("click", submitQuery);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
+  $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);
   $("detailsDrawer").addEventListener("toggle", () => {
     state.ui.detailsOpen = $("detailsDrawer").open;
   });

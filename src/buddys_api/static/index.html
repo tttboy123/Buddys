@@ -178,8 +178,13 @@
       </section>
 
       <section id="proactiveMemoryCard" class="experience-panel" aria-labelledby="proactiveTitle" hidden>
-        <p class="eyebrow">Buddy noticed</p>
-        <h2 id="proactiveTitle">Buddy noticed</h2>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Buddy noticed</p>
+            <h2 id="proactiveTitle">Buddy noticed</h2>
+          </div>
+          <button id="dismissProactiveHintButton" class="ghost-button hint-dismiss" type="button">Ignore</button>
+        </div>
         <p id="proactiveMessage"></p>
         <p id="proactiveBasis" class="support-copy"></p>
       </section>
@@ -187,6 +192,16 @@
       <details id="detailsDrawer" class="details-drawer">
         <summary>Why this answer / details</summary>
         <div class="details-stack">
+          <section id="answerBasisPanel" class="experience-panel detail-panel" aria-labelledby="answerBasisTitle">
+            <p class="eyebrow">Answer basis</p>
+            <h2 id="answerBasisTitle">Why Buddy answered this</h2>
+            <p id="answerBasisQuestion" class="support-copy">No current answer basis.</p>
+            <p id="answerBasisSummary" class="support-copy">Ask Buddy something to inspect evidence details.</p>
+            <ul id="answerBasisEvidenceList" class="state-list">
+              <li>No answer evidence yet.</li>
+            </ul>
+          </section>
+
           <section class="experience-panel detail-panel" aria-labelledby="traceTitle">
             <p class="eyebrow">Action Trace</p>
             <h2 id="traceTitle">Action Trace</h2>

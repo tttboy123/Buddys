@@ -61,7 +61,9 @@ def test_console_html_exposes_single_primary_state_memory_workspace() -> None:
     assert 'id="queryComposer"' in html
     assert 'id="latestAnswerPanel"' in html
     assert 'id="proactiveMemoryCard"' in html
+    assert 'id="dismissProactiveHintButton"' in html
     assert 'id="detailsDrawer"' in html
+    assert 'id="answerBasisPanel"' in html
     assert 'data-surface="browser-console"' not in html
     assert 'data-surface="mobile-app"' not in html
     assert 'data-surface="hardware-display"' not in html
@@ -171,6 +173,8 @@ def test_console_assets_surface_unrecognized_and_traceable_proactive_copy() -> N
     assert "I heard this but could not structure it yet" in script
     assert "Buddy noticed" in script
     assert "Based on" in script
+    assert "dismissProactiveHint" in script
+    assert "state.ui.dismissedHintKey = hint.hintKey;" in script
 
 
 def test_console_uses_sync_snapshot_as_shared_state_source_without_inner_html_injection() -> None:
@@ -182,6 +186,38 @@ def test_console_uses_sync_snapshot_as_shared_state_source_without_inner_html_in
     assert "loadSyncSnapshot" in script
     assert "innerHTML" not in script
     assert "createElement(\"li\")" in script
+
+
+def test_console_assets_keep_signed_out_workspace_auth_only_when_sync_snapshot_contains_legacy_data() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+
+    assert "if (!isAuthenticated())" in project_workspace_body
+    assert "state.workspace.buddies = [];" in project_workspace_body
+    assert "state.workspace.buddyId = null;" in project_workspace_body
+    assert "state.workspace.confirmedItems = [];" in project_workspace_body
+    assert "state.workspace.pendingProposals = [];" in project_workspace_body
+    assert "state.workspace.latestQuery = null;" in project_workspace_body
+    assert "state.workspace.traces = [];" in project_workspace_body
+    assert "state.workspace.costSummary = {};" in project_workspace_body
+
+
+def test_console_assets_render_evidence_and_details_basis_for_current_answer() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+    script = client.get("/static/app.js").text
+
+    assert 'id="answerBasisTitle"' in html
+    assert 'id="answerBasisQuestion"' in html
+    assert 'id="answerBasisSummary"' in html
+    assert 'id="answerBasisEvidenceList"' in html
+    assert "renderAnswerBasisPanel" in script
+    assert "item.source" in script
+    assert "item.last_seen_at" in script
+    assert "latestQuery.answer_type" in script
 
 
 def test_console_styles_define_single_column_mobile_first_experience_shell() -> None:
