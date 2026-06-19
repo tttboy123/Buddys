@@ -121,6 +121,7 @@ class StateMemoryStore:
         source: str,
         content: str,
         deltas: list[StateMemoryDelta],
+        unrecognized: list[str] | None = None,
         status: str = "pending",
     ) -> StateMemoryPendingProposal:
         timestamp = now_iso()
@@ -131,6 +132,7 @@ class StateMemoryStore:
             source=source,
             content=content,
             deltas=deltas,
+            unrecognized=unrecognized or [],
             status=status,
             created_at=timestamp,
             updated_at=timestamp,
@@ -142,7 +144,7 @@ class StateMemoryStore:
     def list_pending_proposals(self, *, user_id: str, buddy_id: str) -> list[StateMemoryPendingProposal]:
         rows = self.connection.execute(
             """
-            SELECT proposal_id, user_id, buddy_id, source, content, deltas_json,
+            SELECT proposal_id, user_id, buddy_id, source, content, deltas_json, unrecognized_json,
                    status, created_at, updated_at
             FROM state_memory_pending_proposals
             WHERE user_id = ? AND buddy_id = ? AND status = 'pending'
@@ -173,7 +175,7 @@ class StateMemoryStore:
         proposal = self._get_owned_proposal(user_id=user_id, buddy_id=buddy_id, proposal_id=proposal_id)
         self._require_pending(proposal)
         with self.connection:
-            return self._update_proposal_locked(proposal, status="rejected")
+            return self._update_proposal_locked(proposal, status="rejected", require_pending=True)
 
     def correct_proposal(
         self,
@@ -205,9 +207,17 @@ class StateMemoryStore:
         applied_items: list[StateMemoryItem] = []
         history_entries: list[StateMemoryHistoryEntry] = []
         with self.connection:
-            updated_proposal = self._update_proposal_locked(proposal, status="confirmed", deltas=deltas)
+            updated_proposal = self._update_proposal_locked(
+                proposal,
+                status="confirmed",
+                deltas=deltas,
+                require_pending=True,
+            )
             for delta in deltas:
-                item, history_entry = self._apply_delta_locked(proposal=updated_proposal, delta=delta)
+                applied = self._apply_delta_locked(proposal=updated_proposal, delta=delta)
+                if applied is None:
+                    continue
+                item, history_entry = applied
                 applied_items.append(item)
                 history_entries.append(history_entry)
         return StateMemoryProposalApplyResult(
@@ -222,14 +232,17 @@ class StateMemoryStore:
         *,
         proposal: StateMemoryPendingProposal,
         delta: StateMemoryDelta,
-    ) -> tuple[StateMemoryItem, StateMemoryHistoryEntry]:
+    ) -> tuple[StateMemoryItem, StateMemoryHistoryEntry] | None:
         current = self._find_item_locked(
             user_id=proposal.user_id,
             buddy_id=proposal.buddy_id,
             normalized_name=_normalize_item_name(delta.item_name),
         )
+        if current is None and delta.operation in {"consume", "remove"}:
+            return None
         timestamp = now_iso()
         if current is None:
+            quantity_after = _quantity_after_for_new_item(delta)
             item = StateMemoryItem(
                 item_id=new_id("state_item"),
                 user_id=proposal.user_id,
@@ -237,11 +250,11 @@ class StateMemoryStore:
                 name=delta.item_name,
                 normalized_name=_normalize_item_name(delta.item_name),
                 category=delta.category,
-                quantity=_quantity_after_for_new_item(delta),
+                quantity=quantity_after,
                 unit=delta.unit,
                 source=delta.source,
                 confidence=delta.confidence,
-                status=_status_after(current_status=None, delta=delta, quantity_after=_quantity_after_for_new_item(delta)),
+                status=_status_after(current_status=None, delta=delta, quantity_after=quantity_after),
                 captured_at=timestamp,
                 last_seen_at=timestamp,
                 updated_at=timestamp,
@@ -319,7 +332,7 @@ class StateMemoryStore:
     ) -> StateMemoryPendingProposal:
         row = self.connection.execute(
             """
-            SELECT proposal_id, user_id, buddy_id, source, content, deltas_json,
+            SELECT proposal_id, user_id, buddy_id, source, content, deltas_json, unrecognized_json,
                    status, created_at, updated_at
             FROM state_memory_pending_proposals
             WHERE proposal_id = ? AND user_id = ? AND buddy_id = ?
@@ -435,9 +448,9 @@ class StateMemoryStore:
             """
             INSERT INTO state_memory_pending_proposals (
                 proposal_id, user_id, buddy_id, source, content, deltas_json,
-                status, created_at, updated_at
+                unrecognized_json, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proposal.proposal_id,
@@ -446,6 +459,7 @@ class StateMemoryStore:
                 proposal.source,
                 proposal.content,
                 _dump_deltas(proposal.deltas),
+                _dump_unrecognized(proposal.unrecognized),
                 proposal.status,
                 proposal.created_at,
                 proposal.updated_at,
@@ -458,6 +472,7 @@ class StateMemoryStore:
         *,
         status: str,
         deltas: list[StateMemoryDelta] | None = None,
+        require_pending: bool = False,
     ) -> StateMemoryPendingProposal:
         updated = StateMemoryPendingProposal(
             proposal_id=proposal.proposal_id,
@@ -466,18 +481,21 @@ class StateMemoryStore:
             source=proposal.source,
             content=proposal.content,
             deltas=deltas or proposal.deltas,
+            unrecognized=proposal.unrecognized,
             status=status,
             created_at=proposal.created_at,
             updated_at=now_iso(),
         )
-        self.connection.execute(
+        cursor = self.connection.execute(
             """
             UPDATE state_memory_pending_proposals
-            SET deltas_json = ?, status = ?, updated_at = ?
+            SET deltas_json = ?, unrecognized_json = ?, status = ?, updated_at = ?
             WHERE proposal_id = ? AND user_id = ? AND buddy_id = ?
-            """,
+            """
+            + (" AND status = 'pending'" if require_pending else ""),
             (
                 _dump_deltas(updated.deltas),
+                _dump_unrecognized(updated.unrecognized),
                 updated.status,
                 updated.updated_at,
                 updated.proposal_id,
@@ -485,6 +503,8 @@ class StateMemoryStore:
                 updated.buddy_id,
             ),
         )
+        if require_pending and cursor.rowcount != 1:
+            raise ValueError("proposal_not_pending")
         return updated
 
 
@@ -533,6 +553,7 @@ def _proposal_from_row(row: sqlite3.Row) -> StateMemoryPendingProposal:
         source=row["source"],
         content=row["content"],
         deltas=[StateMemoryDelta.model_validate(delta) for delta in json.loads(row["deltas_json"])],
+        unrecognized=[str(value).strip() for value in json.loads(row["unrecognized_json"] or "[]") if str(value).strip()],
         status=row["status"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -541,6 +562,10 @@ def _proposal_from_row(row: sqlite3.Row) -> StateMemoryPendingProposal:
 
 def _dump_deltas(deltas: list[StateMemoryDelta]) -> str:
     return json.dumps([delta.model_dump(mode="json") for delta in deltas], ensure_ascii=False, sort_keys=True)
+
+
+def _dump_unrecognized(unrecognized: list[str]) -> str:
+    return json.dumps(unrecognized, ensure_ascii=False, sort_keys=True)
 
 
 def _normalize_item_name(name: str) -> str:

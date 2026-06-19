@@ -54,13 +54,14 @@ class StateMemoryService:
         source: StateMemoryCaptureSource,
         content: str,
     ) -> tuple[StateMemoryPendingProposal, int]:
-        deltas = self._parse_capture(source=source, content=content)
+        deltas, unrecognized = self._parse_capture(source=source, content=content)
         proposal = self.store.save_pending_proposal(
             user_id=user_id,
             buddy_id=buddy_id,
             source=source,
             content=content,
             deltas=deltas,
+            unrecognized=unrecognized,
         )
         sync_event = self.sync_store.append_event(
             event_type="state_memory.proposal_created",
@@ -190,14 +191,24 @@ class StateMemoryService:
         payload["trace_id"] = trace_id
         return StateMemoryQueryAnswer.model_validate(payload)
 
-    def _parse_capture(self, *, source: StateMemoryCaptureSource, content: str) -> list[StateMemoryDelta]:
+    def _parse_capture(
+        self,
+        *,
+        source: StateMemoryCaptureSource,
+        content: str,
+    ) -> tuple[list[StateMemoryDelta], list[str]]:
         parse_capture = getattr(self.provider, "parse_state_memory_capture", None)
         if parse_capture is None:
             raise ValueError("state_memory_capture_not_supported")
-        deltas = parse_capture(source=source, content=content)
-        if not deltas:
+        parsed = parse_capture(source=source, content=content)
+        if isinstance(parsed, tuple):
+            deltas, unrecognized = parsed
+        else:
+            deltas = parsed
+            unrecognized = []
+        if not deltas and not unrecognized:
             raise ValueError("state_memory_capture_empty")
-        return deltas
+        return deltas, unrecognized
 
     def _record_query_trace(
         self,
@@ -296,7 +307,12 @@ def _build_missing_for_recipe_answer(
     required_items: tuple[str, ...],
     items: list[StateMemoryItem],
 ) -> StateMemoryQueryAnswer:
-    available_items = [item for item in items if _item_is_available(item)]
+    required_names = {_normalize_item_name(name) for name in required_items}
+    available_items = [
+        item
+        for item in items
+        if _item_is_available(item) and item.normalized_name in required_names
+    ]
     available_names = {_normalize_item_name(item.name) for item in available_items}
     missing_items = [name for name in required_items if _normalize_item_name(name) not in available_names]
     summary = (

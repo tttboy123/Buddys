@@ -155,14 +155,15 @@ def test_state_memory_capture_proposals_cover_all_supported_sources_without_sile
     ).json()
 
     captures = [
-        ("voice", "我买了五个鸡蛋和一袋土豆", ["鸡蛋", "土豆"]),
+        ("voice", "我买了五个鸡蛋和一包面粉", ["鸡蛋"], ["一包面粉"]),
+        ("voice", "一包面粉", [], ["一包面粉"]),
         ("photo", "照片里有两盒牛奶", ["牛奶"]),
         ("scan", "扫码记录：可乐 2 瓶", ["可乐"]),
         ("conversation", "香料用完了", ["香料"]),
         ("inference", "我用了2个鸡蛋", ["鸡蛋"]),
     ]
 
-    for source, content, expected_names in captures:
+    for source, content, expected_names, *rest in captures:
         response = client.post(
             f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/{source}",
             headers={"Authorization": f"Bearer {token}"},
@@ -172,6 +173,7 @@ def test_state_memory_capture_proposals_cover_all_supported_sources_without_sile
         assert response.status_code == 201
         assert body["proposal"]["source"] == source
         assert [delta["item_name"] for delta in body["proposal"]["deltas"]] == expected_names
+        assert body["proposal"]["unrecognized"] == (rest[0] if rest else [])
         assert body["state_revision"] >= 2
 
     items = client.get(
@@ -189,7 +191,7 @@ def test_state_memory_capture_proposals_cover_all_supported_sources_without_sile
 
     assert items.json() == {"items": []}
     assert history.json() == {"history": []}
-    assert len(pending.json()["pending_proposals"]) == 5
+    assert len(pending.json()["pending_proposals"]) == 6
 
 
 def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_sync_events(tmp_path) -> None:
@@ -367,6 +369,7 @@ def test_state_memory_query_returns_evidence_and_missing_items_for_inventory_and
         ("五花肉", 1.0, "份"),
         ("土豆", 2.0, "个"),
         ("鸡蛋", 5.0, "个"),
+        ("老抽", 1.0, "瓶"),
     ):
         store.create_item(
             user_id=buddy["user_id"],
@@ -400,11 +403,11 @@ def test_state_memory_query_returns_evidence_and_missing_items_for_inventory_and
     assert missing_for_recipe.status_code == 200
     assert missing_for_recipe.json()["answer_type"] == "missing_for_recipe"
     assert missing_for_recipe.json()["subject_name"] == "红烧肉"
-    assert missing_for_recipe.json()["missing_items"] == ["生抽", "老抽", "八角", "冰糖"]
+    assert missing_for_recipe.json()["missing_items"] == ["生抽", "八角", "冰糖"]
     assert set(missing_for_recipe.json()["evidence_item_ids"]) == {
         item["item_id"] for item in missing_for_recipe.json()["evidence_items"]
     }
-    assert {item["name"] for item in missing_for_recipe.json()["evidence_items"]} == {"五花肉", "土豆", "鸡蛋"}
+    assert {item["name"] for item in missing_for_recipe.json()["evidence_items"]} == {"五花肉", "老抽"}
     assert missing_for_recipe.json()["trace_id"].startswith("trace_")
 
 

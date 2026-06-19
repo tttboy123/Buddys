@@ -51,6 +51,8 @@ def test_state_memory_query_emits_golden_trace_with_evidence_fields() -> None:
     assert trace["proposal"]["args"]["answer_type"] == "missing_for_recipe"
     assert trace["proposal"]["args"]["evidence_item_ids"] == answer["evidence_item_ids"]
     assert trace["proposal"]["args"]["missing_items"] == answer["missing_items"]
+    assert [item["name"] for item in answer["evidence_items"]] == ["五花肉"]
+    assert answer["missing_items"] == ["生抽", "老抽", "八角", "冰糖"]
     assert trace["permission_decision"]["policy_result"] == "not_required"
     assert trace["model_usage"]["provider"] == "mock_deterministic"
     assert len(trace["cost_refs"]) == 1

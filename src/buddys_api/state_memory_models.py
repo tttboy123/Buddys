@@ -8,6 +8,7 @@ from buddys_api.schemas import now_iso
 
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+CaptureContentStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 StateMemorySource = Literal["voice", "photo", "scan", "conversation", "inference", "manual"]
 StateMemoryCaptureSource = Literal["voice", "photo", "scan", "conversation", "inference"]
 StateMemoryOperation = Literal["upsert", "consume", "remove"]
@@ -18,7 +19,7 @@ StateMemoryItemStatus = Literal["active", "consumed", "removed"]
 class StateMemoryDelta(BaseModel):
     item_name: NonEmptyStr
     operation: StateMemoryOperation
-    quantity: float | None = None
+    quantity: float | None = Field(default=None, ge=0)
     unit: NonEmptyStr | None = None
     category: NonEmptyStr | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
@@ -31,8 +32,9 @@ class StateMemoryPendingProposal(BaseModel):
     user_id: NonEmptyStr
     buddy_id: NonEmptyStr
     source: StateMemorySource
-    content: NonEmptyStr
+    content: CaptureContentStr
     deltas: list[StateMemoryDelta] = Field(default_factory=list)
+    unrecognized: list[NonEmptyStr] = Field(default_factory=list)
     status: StateMemoryProposalStatus = "pending"
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
@@ -46,7 +48,7 @@ class StateMemoryItem(BaseModel):
     name: NonEmptyStr
     normalized_name: NonEmptyStr
     category: NonEmptyStr | None = None
-    quantity: float | None = None
+    quantity: float | None = Field(default=None, ge=0)
     unit: NonEmptyStr | None = None
     source: StateMemorySource
     confidence: float | None = Field(default=None, ge=0, le=1)
@@ -74,7 +76,7 @@ class StateMemoryHistoryEntry(BaseModel):
 
 
 class StateMemoryCaptureRequest(BaseModel):
-    content: NonEmptyStr
+    content: CaptureContentStr
 
 
 class StateMemoryProposalCorrectionRequest(BaseModel):
@@ -91,7 +93,7 @@ class StateMemoryProposalApplyResult(BaseModel):
 class StateMemoryEvidenceItem(BaseModel):
     item_id: NonEmptyStr
     name: NonEmptyStr
-    quantity: float | None = None
+    quantity: float | None = Field(default=None, ge=0)
     unit: NonEmptyStr | None = None
     status: StateMemoryItemStatus
     source: StateMemorySource

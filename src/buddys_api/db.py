@@ -219,6 +219,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             )),
             content TEXT NOT NULL,
             deltas_json TEXT NOT NULL,
+            unrecognized_json TEXT NOT NULL DEFAULT '[]',
             status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'rejected')),
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -241,5 +242,12 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             SET created_via = 'legacy'
             WHERE user_id NOT IN (SELECT user_id FROM users)
             """
+        )
+    state_memory_pending_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(state_memory_pending_proposals)").fetchall()
+    }
+    if "unrecognized_json" not in state_memory_pending_columns:
+        connection.execute(
+            "ALTER TABLE state_memory_pending_proposals ADD COLUMN unrecognized_json TEXT NOT NULL DEFAULT '[]'"
         )
     connection.commit()

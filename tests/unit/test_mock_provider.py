@@ -34,7 +34,7 @@ def test_unknown_text_returns_reply_only():
 
 
 def test_mock_provider_parses_state_memory_capture_deterministically():
-    deltas = MockProvider().parse_state_memory_capture(
+    deltas, unrecognized = MockProvider().parse_state_memory_capture(
         source="voice",
         content="我买了五个鸡蛋和一袋土豆",
     )
@@ -43,3 +43,14 @@ def test_mock_provider_parses_state_memory_capture_deterministically():
         ("鸡蛋", "upsert", 5.0, "个"),
         ("土豆", "upsert", 1.0, "袋"),
     ]
+    assert unrecognized == []
+
+
+def test_mock_provider_returns_unrecognized_segments_and_supports_recipe_ingredients():
+    deltas, unrecognized = MockProvider().parse_state_memory_capture(
+        source="voice",
+        content="我买了五花肉和老抽和冰糖和一包面粉",
+    )
+
+    assert [delta.item_name for delta in deltas] == ["五花肉", "老抽", "冰糖"]
+    assert unrecognized == ["一包面粉"]

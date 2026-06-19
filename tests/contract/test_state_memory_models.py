@@ -1,6 +1,7 @@
 from pydantic import ValidationError
 
 from buddys_api.state_memory_models import (
+    StateMemoryCaptureRequest,
     StateMemoryDelta,
     StateMemoryEvidenceItem,
     StateMemoryHistoryEntry,
@@ -29,6 +30,7 @@ def test_state_memory_records_export_observable_foundation_fields() -> None:
             )
         ],
         status="pending",
+        unrecognized=["一包面粉"],
         created_at="2026-06-19T16:00:00+08:00",
         updated_at="2026-06-19T16:00:00+08:00",
     )
@@ -86,6 +88,7 @@ def test_state_memory_records_export_observable_foundation_fields() -> None:
 
     assert proposal.model_dump()["schema_version"] == "state_memory_pending_proposal.v1"
     assert proposal.deltas[0].operation == "upsert"
+    assert proposal.unrecognized == ["一包面粉"]
     assert item.model_dump()["schema_version"] == "state_memory_item.v1"
     assert item.status == "active"
     assert history.model_dump()["schema_version"] == "state_memory_history.v1"
@@ -99,6 +102,7 @@ def test_state_memory_records_export_observable_foundation_fields() -> None:
 def test_state_memory_models_reject_blank_names_and_unknown_sources() -> None:
     for factory in [
         lambda: StateMemoryDelta(item_name="", operation="upsert", source="voice"),
+        lambda: StateMemoryDelta(item_name="鸡蛋", operation="upsert", quantity=-1, source="voice"),
         lambda: StateMemoryPendingProposal(
             proposal_id="proposal_1",
             user_id="user_1",
@@ -127,6 +131,7 @@ def test_state_memory_models_reject_blank_names_and_unknown_sources() -> None:
             missing_items=["生抽"],
             trace_id="trace_state_memory_001",
         ),
+        lambda: StateMemoryCaptureRequest(content="x" * 2001),
     ]:
         try:
             factory()

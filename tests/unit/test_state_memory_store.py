@@ -70,6 +70,7 @@ def test_store_persists_pending_proposals_and_scopes_queries_to_owner() -> None:
                 source="photo",
             )
         ],
+        unrecognized=["一包面粉"],
     )
 
     owner_pending = store.list_pending_proposals(user_id=owner_id, buddy_id=buddy_id)
@@ -79,6 +80,7 @@ def test_store_persists_pending_proposals_and_scopes_queries_to_owner() -> None:
 
     assert owner_pending == [proposal]
     assert owner_pending[0].status == "pending"
+    assert owner_pending[0].unrecognized == ["一包面粉"]
     assert other_pending == []
     assert other_items == []
     assert other_history == []
@@ -222,3 +224,40 @@ def test_proposal_lifecycle_is_scoped_to_owner_and_safe_against_double_apply() -
         pass
     else:
         raise AssertionError("confirmed proposal should not be applied twice")
+
+    items = store.list_items(user_id=owner_id, buddy_id=buddy_id)
+    history = store.list_history(user_id=owner_id, buddy_id=buddy_id)
+    assert [(item.name, item.quantity) for item in items] == [("可乐", 2.0)]
+    assert [entry.item_name for entry in history] == ["可乐"]
+
+
+def test_consume_or_remove_nonexistent_item_does_not_create_phantom_records() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    consume_result = store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="voice",
+            content="我用了2个鸡蛋",
+            deltas=[StateMemoryDelta(item_name="鸡蛋", operation="consume", quantity=2, unit="个", source="voice")],
+        ).proposal_id,
+    )
+    remove_result = store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="conversation",
+            content="香料用完了",
+            deltas=[StateMemoryDelta(item_name="香料", operation="remove", source="conversation")],
+        ).proposal_id,
+    )
+
+    assert consume_result.applied_delta_count == 0
+    assert remove_result.applied_delta_count == 0
+    assert store.list_items(user_id=owner_id, buddy_id=buddy_id) == []
+    assert store.list_history(user_id=owner_id, buddy_id=buddy_id) == []

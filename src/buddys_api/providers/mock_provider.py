@@ -92,11 +92,21 @@ class MockProvider:
             return default
         return int(match.group(0))
 
-    def parse_state_memory_capture(self, *, source: StateMemoryCaptureSource, content: str) -> list[StateMemoryDelta]:
+    def parse_state_memory_capture(
+        self,
+        *,
+        source: StateMemoryCaptureSource,
+        content: str,
+    ) -> tuple[list[StateMemoryDelta], list[str]]:
         deltas: list[StateMemoryDelta] = []
-        for segment in re.split(r"[，,；;和]\s*", content):
+        unrecognized: list[str] = []
+        for raw_segment in re.split(r"[，,；;和]\s*", content):
+            segment = raw_segment.strip()
+            if not segment:
+                continue
             item_name = _extract_known_item_name(segment)
             if item_name is None:
+                unrecognized.append(segment)
                 continue
             operation = _detect_state_memory_operation(segment)
             quantity, unit = _extract_quantity_and_unit(segment, item_name)
@@ -111,7 +121,7 @@ class MockProvider:
                     source=source,
                 )
             )
-        return deltas
+        return deltas, unrecognized
 
 
 _KNOWN_ITEMS = (
@@ -122,6 +132,9 @@ _KNOWN_ITEMS = (
     "香料",
     "八角",
     "生抽",
+    "五花肉",
+    "老抽",
+    "冰糖",
 )
 
 _KNOWN_UNITS = ("个", "袋", "盒", "瓶", "包", "罐")
