@@ -146,6 +146,88 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_agents_user_id
             ON agents(user_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS state_memory_items (
+            item_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            normalized_name TEXT NOT NULL,
+            category TEXT,
+            quantity REAL,
+            unit TEXT,
+            source TEXT NOT NULL CHECK (source IN (
+                'voice',
+                'photo',
+                'scan',
+                'conversation',
+                'inference',
+                'manual'
+            )),
+            confidence REAL,
+            status TEXT NOT NULL CHECK (status IN ('active', 'consumed', 'removed')),
+            captured_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            FOREIGN KEY (buddy_id) REFERENCES buddies(buddy_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_state_memory_items_owner
+            ON state_memory_items(user_id, buddy_id, normalized_name);
+
+        CREATE TABLE IF NOT EXISTS state_memory_history (
+            history_id TEXT PRIMARY KEY,
+            item_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            item_name TEXT NOT NULL,
+            change_type TEXT NOT NULL,
+            change_source TEXT NOT NULL CHECK (change_source IN (
+                'voice',
+                'photo',
+                'scan',
+                'conversation',
+                'inference',
+                'manual'
+            )),
+            quantity_before REAL,
+            quantity_after REAL,
+            unit_before TEXT,
+            unit_after TEXT,
+            proposal_id TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (item_id) REFERENCES state_memory_items(item_id),
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            FOREIGN KEY (buddy_id) REFERENCES buddies(buddy_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_state_memory_history_owner
+            ON state_memory_history(user_id, buddy_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS state_memory_pending_proposals (
+            proposal_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            source TEXT NOT NULL CHECK (source IN (
+                'voice',
+                'photo',
+                'scan',
+                'conversation',
+                'inference',
+                'manual'
+            )),
+            content TEXT NOT NULL,
+            deltas_json TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'rejected')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            FOREIGN KEY (buddy_id) REFERENCES buddies(buddy_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_state_memory_pending_owner
+            ON state_memory_pending_proposals(user_id, buddy_id, status, created_at);
         """
     )
     buddy_columns = {

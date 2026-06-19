@@ -22,6 +22,8 @@ from buddys_api.provider_routes import router as provider_router
 from buddys_api.provider_store import ProviderStore
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import ActionTrace, Buddy, CostEvent
+from buddys_api.state_memory_routes import router as state_memory_router
+from buddys_api.state_memory_store import StateMemoryStore
 from buddys_api.sync_routes import router as sync_router
 from buddys_api.sync_store import SyncStore
 from buddys_api.token_plan import TokenPlanLimitExceeded, UsageStore
@@ -68,6 +70,7 @@ def create_app(
     app.state.provider_store = ProviderStore(connection)
     app.state.usage_store = UsageStore(connection)
     app.state.agent_store = AgentStore(connection)
+    app.state.state_memory_store = StateMemoryStore(connection)
     app.state.runtime = runtime or _runtime_from_env(app.state.buddy_store)
     if runtime is not None and runtime.buddy_store is None:
         runtime.buddy_store = app.state.buddy_store
@@ -80,6 +83,7 @@ def create_app(
     app.include_router(sync_router)
     app.include_router(provider_router)
     app.include_router(agent_router)
+    app.include_router(state_memory_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
