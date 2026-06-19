@@ -31,3 +31,15 @@ def test_unknown_text_returns_reply_only():
 
     assert result.intent_name == "chat"
     assert result.proposal.action_type == "reply_only"
+
+
+def test_mock_provider_parses_state_memory_capture_deterministically():
+    deltas = MockProvider().parse_state_memory_capture(
+        source="voice",
+        content="我买了五个鸡蛋和一袋土豆",
+    )
+
+    assert [(delta.item_name, delta.operation, delta.quantity, delta.unit) for delta in deltas] == [
+        ("鸡蛋", "upsert", 5.0, "个"),
+        ("土豆", "upsert", 1.0, "袋"),
+    ]

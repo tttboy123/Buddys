@@ -82,3 +82,143 @@ def test_store_persists_pending_proposals_and_scopes_queries_to_owner() -> None:
     assert other_pending == []
     assert other_items == []
     assert other_history == []
+
+
+def test_confirm_proposal_writes_items_and_history_only_after_explicit_apply() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="voice",
+        content="我买了五个鸡蛋和一袋土豆",
+        deltas=[
+            StateMemoryDelta(
+                item_name="鸡蛋",
+                operation="upsert",
+                quantity=5,
+                unit="个",
+                confidence=0.92,
+                source="voice",
+            ),
+            StateMemoryDelta(
+                item_name="土豆",
+                operation="upsert",
+                quantity=1,
+                unit="袋",
+                confidence=0.88,
+                source="voice",
+            ),
+        ],
+    )
+
+    assert store.list_items(user_id=owner_id, buddy_id=buddy_id) == []
+    assert store.list_history(user_id=owner_id, buddy_id=buddy_id) == []
+
+    result = store.confirm_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+
+    assert result.applied_delta_count == 2
+    assert result.proposal.status == "confirmed"
+    assert [item.name for item in result.items] == ["鸡蛋", "土豆"]
+    assert [entry.item_name for entry in result.history_entries] == ["鸡蛋", "土豆"]
+    assert store.list_pending_proposals(user_id=owner_id, buddy_id=buddy_id) == []
+
+
+def test_reject_proposal_marks_it_rejected_without_writing_state() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="conversation",
+        content="香料用完了",
+        deltas=[StateMemoryDelta(item_name="香料", operation="remove", source="conversation")],
+    )
+
+    rejected = store.reject_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+
+    assert rejected.status == "rejected"
+    assert store.list_items(user_id=owner_id, buddy_id=buddy_id) == []
+    assert store.list_history(user_id=owner_id, buddy_id=buddy_id) == []
+    assert store.list_pending_proposals(user_id=owner_id, buddy_id=buddy_id) == []
+
+
+def test_correct_proposal_applies_override_deltas_instead_of_original_parse() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="photo",
+        content="fridge.jpg",
+        deltas=[
+            StateMemoryDelta(
+                item_name="牛奶",
+                operation="upsert",
+                quantity=2,
+                unit="盒",
+                confidence=0.65,
+                source="photo",
+            )
+        ],
+    )
+
+    result = store.correct_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=proposal.proposal_id,
+        corrected_deltas=[
+            StateMemoryDelta(
+                item_name="牛奶",
+                operation="upsert",
+                quantity=1,
+                unit="盒",
+                confidence=1.0,
+                source="manual",
+            )
+        ],
+    )
+
+    assert result.applied_delta_count == 1
+    assert result.proposal.status == "confirmed"
+    assert result.proposal.deltas[0].quantity == 1
+    assert result.items[0].name == "牛奶"
+    assert result.items[0].quantity == 1
+    assert result.history_entries[0].quantity_after == 1
+
+
+def test_proposal_lifecycle_is_scoped_to_owner_and_safe_against_double_apply() -> None:
+    store, owner_id, other_id, buddy_id, _ = make_store()
+
+    proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="scan",
+        content="scan: 可乐 2 瓶",
+        deltas=[
+            StateMemoryDelta(
+                item_name="可乐",
+                operation="upsert",
+                quantity=2,
+                unit="瓶",
+                confidence=0.99,
+                source="scan",
+            )
+        ],
+    )
+
+    try:
+        store.confirm_proposal(user_id=other_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("cross-user confirm should not be allowed")
+
+    store.confirm_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+
+    try:
+        store.confirm_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("confirmed proposal should not be applied twice")

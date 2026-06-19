@@ -7,6 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from buddys_api.auth_models import UserPublic
 from buddys_api.auth_routes import require_current_user
 from buddys_api.buddy_store import BuddyStore
+from buddys_api.state_memory_models import (
+    StateMemoryCaptureRequest,
+    StateMemoryCaptureSource,
+    StateMemoryProposalCorrectionRequest,
+)
+from buddys_api.state_memory_service import StateMemoryService
 from buddys_api.state_memory_store import StateMemoryStore
 
 
@@ -58,6 +64,104 @@ def list_state_memory_pending_proposals(
     }
 
 
+@router.post("/captures/{source}", status_code=201)
+def create_state_memory_capture_proposal(
+    buddy_id: str,
+    source: StateMemoryCaptureSource,
+    request: StateMemoryCaptureRequest,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        proposal, revision = _state_memory_service(fastapi_request).create_capture_proposal(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            source=source,
+            content=request.content,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+    return {
+        "proposal": proposal,
+        "state_revision": revision,
+    }
+
+
+@router.post("/proposals/{proposal_id}/confirm")
+def confirm_state_memory_proposal(
+    buddy_id: str,
+    proposal_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        result, revision = _state_memory_service(fastapi_request).confirm_proposal(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            proposal_id=proposal_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "proposal_not_found"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+    return {
+        **result.model_dump(mode="json"),
+        "state_revision": revision,
+    }
+
+
+@router.post("/proposals/{proposal_id}/reject")
+def reject_state_memory_proposal(
+    buddy_id: str,
+    proposal_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        proposal, revision = _state_memory_service(fastapi_request).reject_proposal(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            proposal_id=proposal_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "proposal_not_found"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+    return {
+        "proposal": proposal,
+        "state_revision": revision,
+    }
+
+
+@router.post("/proposals/{proposal_id}/correct")
+def correct_state_memory_proposal(
+    buddy_id: str,
+    proposal_id: str,
+    request: StateMemoryProposalCorrectionRequest,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        result, revision = _state_memory_service(fastapi_request).correct_proposal(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            proposal_id=proposal_id,
+            corrected_deltas=request.deltas,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "proposal_not_found"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+    return {
+        **result.model_dump(mode="json"),
+        "state_revision": revision,
+    }
+
+
 def _require_auth_buddy(request: Request, *, buddy_id: str, user_id: str) -> None:
     try:
         _buddy_store(request).get_for_user(buddy_id=buddy_id, user_id=user_id, created_via="auth")
@@ -67,6 +171,10 @@ def _require_auth_buddy(request: Request, *, buddy_id: str, user_id: str) -> Non
 
 def _state_memory_store(request: Request) -> StateMemoryStore:
     return request.app.state.state_memory_store
+
+
+def _state_memory_service(request: Request) -> StateMemoryService:
+    return request.app.state.state_memory_service
 
 
 def _buddy_store(request: Request) -> BuddyStore:

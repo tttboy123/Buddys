@@ -9,6 +9,7 @@ from buddys_api.schemas import now_iso
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 StateMemorySource = Literal["voice", "photo", "scan", "conversation", "inference", "manual"]
+StateMemoryCaptureSource = Literal["voice", "photo", "scan", "conversation", "inference"]
 StateMemoryOperation = Literal["upsert", "consume", "remove"]
 StateMemoryProposalStatus = Literal["pending", "confirmed", "rejected"]
 StateMemoryItemStatus = Literal["active", "consumed", "removed"]
@@ -70,3 +71,18 @@ class StateMemoryHistoryEntry(BaseModel):
     unit_after: NonEmptyStr | None = None
     proposal_id: str | None = None
     created_at: str = Field(default_factory=now_iso)
+
+
+class StateMemoryCaptureRequest(BaseModel):
+    content: NonEmptyStr
+
+
+class StateMemoryProposalCorrectionRequest(BaseModel):
+    deltas: list[StateMemoryDelta] = Field(default_factory=list, min_length=1)
+
+
+class StateMemoryProposalApplyResult(BaseModel):
+    proposal: StateMemoryPendingProposal
+    items: list[StateMemoryItem] = Field(default_factory=list)
+    history_entries: list[StateMemoryHistoryEntry] = Field(default_factory=list)
+    applied_delta_count: int = 0

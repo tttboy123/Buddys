@@ -23,6 +23,7 @@ from buddys_api.provider_store import ProviderStore
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import ActionTrace, Buddy, CostEvent
 from buddys_api.state_memory_routes import router as state_memory_router
+from buddys_api.state_memory_service import StateMemoryService
 from buddys_api.state_memory_store import StateMemoryStore
 from buddys_api.sync_routes import router as sync_router
 from buddys_api.sync_store import SyncStore
@@ -77,6 +78,11 @@ def create_app(
     if app.state.runtime.usage_store is None:
         app.state.runtime.usage_store = app.state.usage_store
     app.state.device_store = device_store or DeviceRegistry()
+    app.state.state_memory_service = StateMemoryService(
+        store=app.state.state_memory_store,
+        sync_store=app.state.sync_store,
+        provider=app.state.runtime.provider,
+    )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(auth_router)
     app.include_router(device_router)
