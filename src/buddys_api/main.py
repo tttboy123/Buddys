@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from buddys_api.adapters.mock_home import MockHomeAdapter
 from buddys_api.agent_routes import router as agent_router
 from buddys_api.agent_store import AgentStore
+from buddys_api.auth_models import UserPublic
 from buddys_api.auth_routes import router as auth_router
 from buddys_api.auth_store import AuthStore
 from buddys_api.buddy_store import BuddyStore
@@ -82,6 +83,8 @@ def create_app(
         store=app.state.state_memory_store,
         sync_store=app.state.sync_store,
         provider=app.state.runtime.provider,
+        trace_store=app.state.runtime.trace_store,
+        cost_meter=app.state.runtime.cost_meter,
     )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(auth_router)
@@ -210,15 +213,32 @@ def create_app(
         }
 
     @app.get("/traces/{trace_id}")
-    def get_trace(trace_id: str) -> ActionTrace:
+    def get_trace(
+        trace_id: str,
+        fastapi_request: Request,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> ActionTrace:
         try:
-            return app.state.runtime.trace_store.get(trace_id)
+            trace = app.state.runtime.trace_store.get(trace_id)
         except KeyError as exc:
             raise _not_found("trace_not_found") from exc
+        current_user = _optional_current_user(fastapi_request, authorization)
+        if not _can_view_trace(fastapi_request, trace=trace, current_user=current_user):
+            raise _not_found("trace_not_found")
+        return trace
 
     @app.get("/cost-events")
-    def list_cost_events() -> dict[str, list[CostEvent]]:
-        return {"cost_events": app.state.runtime.cost_meter.list()}
+    def list_cost_events(
+        fastapi_request: Request,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> dict[str, list[CostEvent]]:
+        current_user = _optional_current_user(fastapi_request, authorization)
+        visible_events = [
+            event
+            for event in app.state.runtime.cost_meter.list()
+            if _can_view_cost_event(fastapi_request, event=event, current_user=current_user)
+        ]
+        return {"cost_events": visible_events}
 
     return app
 
@@ -231,6 +251,41 @@ def _assistant_message(summary: str, requires_confirmation: bool) -> str:
 
 def _not_found(code: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": code})
+
+
+def _optional_current_user(request: Request, authorization: str | None) -> UserPublic | None:
+    if authorization is None:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if not separator or scheme.lower() != "bearer" or not token.strip():
+        raise HTTPException(status_code=401, detail={"code": "missing_bearer_token"})
+    user = request.app.state.auth_store.authenticate_token(token.strip())
+    if user is None:
+        raise HTTPException(status_code=401, detail={"code": "invalid_or_expired_token"})
+    return user
+
+
+def _can_view_trace(request: Request, *, trace: ActionTrace, current_user: UserPublic | None) -> bool:
+    if _buddy_origin(request, trace.buddy_id) != "auth":
+        return True
+    return current_user is not None and current_user.user_id == trace.user_id
+
+
+def _can_view_cost_event(request: Request, *, event: CostEvent, current_user: UserPublic | None) -> bool:
+    try:
+        buddy = request.app.state.buddy_store.get(event.buddy_id)
+    except KeyError:
+        return False
+    if _buddy_origin(request, event.buddy_id) != "auth":
+        return True
+    return current_user is not None and current_user.user_id == buddy.user_id
+
+
+def _buddy_origin(request: Request, buddy_id: str) -> str:
+    try:
+        return request.app.state.buddy_store.origin_for_buddy(buddy_id)
+    except KeyError:
+        return "legacy"
 
 
 def _db_path(db_path: str | Path | None) -> str | Path:

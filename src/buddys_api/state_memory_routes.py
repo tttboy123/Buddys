@@ -11,6 +11,8 @@ from buddys_api.state_memory_models import (
     StateMemoryCaptureRequest,
     StateMemoryCaptureSource,
     StateMemoryProposalCorrectionRequest,
+    StateMemoryQueryAnswer,
+    StateMemoryQueryRequest,
 )
 from buddys_api.state_memory_service import StateMemoryService
 from buddys_api.state_memory_store import StateMemoryStore
@@ -62,6 +64,26 @@ def list_state_memory_pending_proposals(
             buddy_id=buddy_id,
         )
     }
+
+
+@router.post("/query")
+def query_state_memory(
+    buddy_id: str,
+    request: StateMemoryQueryRequest,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> StateMemoryQueryAnswer:
+    buddy = _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        return _state_memory_service(fastapi_request).answer_query(
+            user_id=current_user.user_id,
+            buddy_id=buddy.buddy_id,
+            space_id=buddy.space_id,
+            device_id=buddy.device_id,
+            question=request.question,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
 
 @router.post("/captures/{source}", status_code=201)
@@ -162,9 +184,9 @@ def correct_state_memory_proposal(
     }
 
 
-def _require_auth_buddy(request: Request, *, buddy_id: str, user_id: str) -> None:
+def _require_auth_buddy(request: Request, *, buddy_id: str, user_id: str) -> UserPublic | object:
     try:
-        _buddy_store(request).get_for_user(buddy_id=buddy_id, user_id=user_id, created_via="auth")
+        return _buddy_store(request).get_for_user(buddy_id=buddy_id, user_id=user_id, created_via="auth")
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "buddy_not_found"}) from exc
 

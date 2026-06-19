@@ -307,6 +307,172 @@ def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_
     )
 
 
+def test_state_memory_query_requires_auth_and_scopes_reads_to_buddy_owner(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "owner@example.com")
+    other_token = register(client, "other@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=5,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    unauth_query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        json={"question": "有鸡蛋吗"},
+    )
+    owner_query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    cross_user_query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {other_token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+
+    assert unauth_query.status_code == 401
+    assert unauth_query.json() == {"detail": {"code": "missing_bearer_token"}}
+    assert owner_query.status_code == 200
+    assert owner_query.json()["answer_type"] == "have_item"
+    assert owner_query.json()["has_item"] is True
+    assert owner_query.json()["evidence_item_ids"]
+    assert cross_user_query.status_code == 404
+    assert cross_user_query.json() == {"detail": {"code": "buddy_not_found"}}
+
+
+def test_state_memory_query_returns_evidence_and_missing_items_for_inventory_and_recipe_questions(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    store = app.state.state_memory_store
+    for name, quantity, unit in (
+        ("五花肉", 1.0, "份"),
+        ("土豆", 2.0, "个"),
+        ("鸡蛋", 5.0, "个"),
+    ):
+        store.create_item(
+            user_id=buddy["user_id"],
+            buddy_id=buddy["buddy_id"],
+            name=name,
+            category="ingredient",
+            quantity=quantity,
+            unit=unit,
+            source="manual",
+            confidence=1.0,
+        )
+
+    have_item = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    missing_for_recipe = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "能做红烧肉吗"},
+    )
+
+    assert have_item.status_code == 200
+    assert have_item.json()["answer_type"] == "have_item"
+    assert have_item.json()["subject_name"] == "鸡蛋"
+    assert have_item.json()["has_item"] is True
+    assert have_item.json()["missing_items"] == []
+    assert [item["name"] for item in have_item.json()["evidence_items"]] == ["鸡蛋"]
+
+    assert missing_for_recipe.status_code == 200
+    assert missing_for_recipe.json()["answer_type"] == "missing_for_recipe"
+    assert missing_for_recipe.json()["subject_name"] == "红烧肉"
+    assert missing_for_recipe.json()["missing_items"] == ["生抽", "老抽", "八角", "冰糖"]
+    assert set(missing_for_recipe.json()["evidence_item_ids"]) == {
+        item["item_id"] for item in missing_for_recipe.json()["evidence_items"]
+    }
+    assert {item["name"] for item in missing_for_recipe.json()["evidence_items"]} == {"五花肉", "土豆", "鸡蛋"}
+    assert missing_for_recipe.json()["trace_id"].startswith("trace_")
+
+
+def test_state_memory_query_trace_and_cost_artifacts_are_owner_scoped(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "owner@example.com")
+    other_token = register(client, "other@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=5,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    legacy_buddy = client.post("/buddies", json={"user_id": "legacy_user"}).json()
+    legacy_message = client.post(
+        f"/buddies/{legacy_buddy['buddy_id']}/messages",
+        json={"user_id": "legacy_user", "message": "把客厅灯调暗"},
+    ).json()
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+    trace_id = query.json()["trace_id"]
+
+    owner_trace = client.get(
+        f"/traces/{trace_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    unauth_trace = client.get(f"/traces/{trace_id}")
+    cross_user_trace = client.get(
+        f"/traces/{trace_id}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    legacy_trace = client.get(f"/traces/{legacy_message['trace_id']}")
+
+    owner_costs = client.get("/cost-events", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    other_costs = client.get("/cost-events", headers={"Authorization": f"Bearer {other_token}"}).json()
+    unauth_costs = client.get("/cost-events").json()
+
+    assert owner_trace.status_code == 200
+    query_cost_event_id = owner_trace.json()["cost_refs"][0]
+    assert unauth_trace.status_code == 404
+    assert unauth_trace.json() == {"detail": {"code": "trace_not_found"}}
+    assert cross_user_trace.status_code == 404
+    assert cross_user_trace.json() == {"detail": {"code": "trace_not_found"}}
+    assert legacy_trace.status_code == 200
+    assert legacy_trace.json()["trace_id"] == legacy_message["trace_id"]
+
+    assert query_cost_event_id in {event["cost_event_id"] for event in owner_costs["cost_events"]}
+    assert query_cost_event_id not in {event["cost_event_id"] for event in other_costs["cost_events"]}
+    assert query_cost_event_id not in {event["cost_event_id"] for event in unauth_costs["cost_events"]}
+    assert legacy_message["cost_event_ids"][0] in {event["cost_event_id"] for event in unauth_costs["cost_events"]}
+
+
 def register(client: TestClient, email: str) -> str:
     response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
     assert response.status_code == 201

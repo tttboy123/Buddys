@@ -2,9 +2,12 @@ from pydantic import ValidationError
 
 from buddys_api.state_memory_models import (
     StateMemoryDelta,
+    StateMemoryEvidenceItem,
     StateMemoryHistoryEntry,
     StateMemoryItem,
     StateMemoryPendingProposal,
+    StateMemoryQueryAnswer,
+    StateMemoryQueryRequest,
 )
 
 
@@ -60,6 +63,26 @@ def test_state_memory_records_export_observable_foundation_fields() -> None:
         proposal_id=proposal.proposal_id,
         created_at="2026-06-19T16:00:00+08:00",
     )
+    evidence_item = StateMemoryEvidenceItem(
+        item_id=item.item_id,
+        name=item.name,
+        quantity=item.quantity,
+        unit=item.unit,
+        status=item.status,
+        source=item.source,
+        last_seen_at=item.last_seen_at,
+    )
+    query_request = StateMemoryQueryRequest(question="有鸡蛋吗")
+    query_answer = StateMemoryQueryAnswer(
+        answer_type="have_item",
+        subject_name="鸡蛋",
+        summary="还有鸡蛋。",
+        evidence_item_ids=[item.item_id],
+        evidence_items=[evidence_item],
+        missing_items=[],
+        has_item=True,
+        trace_id="trace_state_memory_001",
+    )
 
     assert proposal.model_dump()["schema_version"] == "state_memory_pending_proposal.v1"
     assert proposal.deltas[0].operation == "upsert"
@@ -67,6 +90,10 @@ def test_state_memory_records_export_observable_foundation_fields() -> None:
     assert item.status == "active"
     assert history.model_dump()["schema_version"] == "state_memory_history.v1"
     assert history.change_source == "voice"
+    assert query_request.question == "有鸡蛋吗"
+    assert query_answer.evidence_item_ids == ["item_egg"]
+    assert query_answer.evidence_items[0].name == "鸡蛋"
+    assert query_answer.has_item is True
 
 
 def test_state_memory_models_reject_blank_names_and_unknown_sources() -> None:
@@ -89,6 +116,16 @@ def test_state_memory_models_reject_blank_names_and_unknown_sources() -> None:
             normalized_name="egg",
             source="manual",
             status="active",
+        ),
+        lambda: StateMemoryQueryRequest(question="   "),
+        lambda: StateMemoryQueryAnswer(
+            answer_type="missing_for_recipe",
+            subject_name="红烧肉",
+            summary="   ",
+            evidence_item_ids=[],
+            evidence_items=[],
+            missing_items=["生抽"],
+            trace_id="trace_state_memory_001",
         ),
     ]:
         try:

@@ -86,3 +86,28 @@ class StateMemoryProposalApplyResult(BaseModel):
     items: list[StateMemoryItem] = Field(default_factory=list)
     history_entries: list[StateMemoryHistoryEntry] = Field(default_factory=list)
     applied_delta_count: int = 0
+
+
+class StateMemoryEvidenceItem(BaseModel):
+    item_id: NonEmptyStr
+    name: NonEmptyStr
+    quantity: float | None = None
+    unit: NonEmptyStr | None = None
+    status: StateMemoryItemStatus
+    source: StateMemorySource
+    last_seen_at: str
+
+
+class StateMemoryQueryRequest(BaseModel):
+    question: NonEmptyStr
+
+
+class StateMemoryQueryAnswer(BaseModel):
+    answer_type: Literal["have_item", "missing_for_recipe"]
+    subject_name: NonEmptyStr
+    summary: NonEmptyStr
+    evidence_item_ids: list[NonEmptyStr] = Field(default_factory=list)
+    evidence_items: list[StateMemoryEvidenceItem] = Field(default_factory=list)
+    missing_items: list[NonEmptyStr] = Field(default_factory=list)
+    has_item: bool | None = None
+    trace_id: NonEmptyStr

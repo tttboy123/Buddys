@@ -72,6 +72,15 @@ class BuddyStore:
             raise KeyError(f"buddy not found: {buddy_id}")
         return buddy
 
+    def origin_for_buddy(self, buddy_id: str) -> BuddyOrigin:
+        row = self.connection.execute(
+            "SELECT created_via FROM buddies WHERE buddy_id = ?",
+            (buddy_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"buddy not found: {buddy_id}")
+        return row["created_via"]
+
     def list_for_user(self, user_id: str, created_via: BuddyOrigin | None = None) -> list[Buddy]:
         where = "WHERE user_id = ?"
         params: tuple[str, ...] = (user_id,)
