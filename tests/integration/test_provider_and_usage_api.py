@@ -40,7 +40,7 @@ def test_provider_create_rejects_raw_secret_like_fields(tmp_path, secret_field: 
 def test_provider_config_metadata_is_redacted_and_test_is_local_only(tmp_path, monkeypatch) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")
-    monkeypatch.setenv("BUDDYS_TEST_PROVIDER_KEY", "sk-raw-value-should-never-leak")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-raw-value-should-never-leak")
 
     create_response = client.post(
         "/providers",
@@ -49,18 +49,18 @@ def test_provider_config_metadata_is_redacted_and_test_is_local_only(tmp_path, m
     )
     list_response = client.get("/providers", headers={"Authorization": f"Bearer {token}"})
     test_response = client.post(
-        "/providers/openai-compatible-local/test",
+        "/providers/minimax-openai/test",
         headers={"Authorization": f"Bearer {token}"},
     )
 
     assert create_response.status_code == 200
     assert list_response.status_code == 200
     assert test_response.status_code == 200
-    assert create_response.json()["api_key_env_var"] == "BUDDYS_TEST_PROVIDER_KEY"
+    assert create_response.json()["api_key_env_var"] == "OPENAI_API_KEY"
     assert test_response.json() == {
-        "provider_id": "openai-compatible-local",
+        "provider_id": "minimax-openai",
         "status": "configured",
-        "api_key_env_var": "BUDDYS_TEST_PROVIDER_KEY",
+        "api_key_env_var": "OPENAI_API_KEY",
         "external_network_called": False,
     }
 
@@ -88,12 +88,40 @@ def test_provider_config_rejects_raw_key_in_env_var_field_without_echoing_it(tmp
     assert raw_key not in str(response.json())
 
 
+def test_provider_config_rejects_non_openai_api_key_env_var_for_real_provider(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+
+    response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json=valid_provider_payload() | {"api_key_env_var": "BUDDYS_TEST_PROVIDER_KEY"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "invalid_provider_config"}}
+
+
+def test_provider_config_rejects_non_minimax_base_url_for_real_provider(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+
+    response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json=valid_provider_payload() | {"base_url": "https://evil.example.com/v1"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "invalid_provider_config"}}
+
+
 def test_legacy_message_records_demo_usage_and_sync_snapshot_plan_usage_without_secret_leak(
     tmp_path,
     monkeypatch,
 ) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
-    monkeypatch.setenv("BUDDYS_TEST_PROVIDER_KEY", "sk-sync-secret-value")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-sync-secret-value")
     buddy = client.post("/buddies", json={"user_id": "user_demo"}).json()
 
     message_response = client.post(
@@ -143,12 +171,12 @@ def test_legacy_message_hard_limit_returns_safe_error_before_cost_or_usage_recor
 
 def valid_provider_payload() -> dict[str, str]:
     return {
-        "provider_id": "openai-compatible-local",
-        "display_name": "Local OpenAI Compatible",
+        "provider_id": "minimax-openai",
+        "display_name": "MiniMax OpenAI Compatible",
         "provider_type": "openai_compatible",
-        "base_url": "https://provider.example.test/v1",
-        "api_key_env_var": "BUDDYS_TEST_PROVIDER_KEY",
-        "default_model": "test-model",
+        "base_url": "https://api.minimaxi.com/v1",
+        "api_key_env_var": "OPENAI_API_KEY",
+        "default_model": "MiniMax-M3",
     }
 
 

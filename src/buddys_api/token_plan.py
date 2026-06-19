@@ -26,6 +26,7 @@ class UsageLedgerEntry(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    estimated: bool = False
     source: str
     usage_month: str
     created_at: str
@@ -133,7 +134,9 @@ class UsageStore:
         model_id: str,
         input_tokens: int,
         output_tokens: int,
+        estimated: bool = False,
         source: str,
+        enforce_hard_limit: bool = True,
     ) -> UsageLedgerEntry:
         if input_tokens < 0 or output_tokens < 0:
             raise ValueError("token counts must be non-negative")
@@ -141,7 +144,8 @@ class UsageStore:
         month = current_usage_month()
         summary = self.usage_summary(user_id, usage_month=month)
         if (
-            summary.hard_limit
+            enforce_hard_limit
+            and summary.hard_limit
             and summary.monthly_token_limit is not None
             and summary.used_tokens + total_tokens > summary.monthly_token_limit
         ):
@@ -157,6 +161,7 @@ class UsageStore:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
+            estimated=estimated,
             source=source,
             usage_month=month,
             created_at=now_iso(),
@@ -166,9 +171,9 @@ class UsageStore:
                 """
                 INSERT INTO usage_ledger (
                     usage_event_id, user_id, trace_id, buddy_id, provider_id, model_id,
-                    input_tokens, output_tokens, total_tokens, source, usage_month, created_at
+                    input_tokens, output_tokens, total_tokens, estimated, source, usage_month, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     entry.usage_event_id,
@@ -180,6 +185,7 @@ class UsageStore:
                     entry.input_tokens,
                     entry.output_tokens,
                     entry.total_tokens,
+                    int(entry.estimated),
                     entry.source,
                     entry.usage_month,
                     entry.created_at,
@@ -192,7 +198,7 @@ class UsageStore:
         rows = self.connection.execute(
             """
             SELECT usage_event_id, user_id, trace_id, buddy_id, provider_id, model_id,
-                   input_tokens, output_tokens, total_tokens, source, usage_month, created_at
+                   input_tokens, output_tokens, total_tokens, estimated, source, usage_month, created_at
             FROM usage_ledger
             WHERE user_id = ? AND usage_month = ?
             ORDER BY created_at, usage_event_id
@@ -208,6 +214,18 @@ class UsageStore:
         ).fetchone()
         plan_id = row["plan_id"] if row is not None else "free"
         return self.plans.get(plan_id, self.plans["free"])
+
+    def ensure_within_hard_limit(self, *, user_id: str, attempted_tokens: int) -> None:
+        if attempted_tokens < 0:
+            raise ValueError("attempted_tokens must be non-negative")
+        month = current_usage_month()
+        summary = self.usage_summary(user_id, usage_month=month)
+        if (
+            summary.hard_limit
+            and summary.monthly_token_limit is not None
+            and summary.used_tokens + attempted_tokens > summary.monthly_token_limit
+        ):
+            raise TokenPlanLimitExceeded(summary=summary, attempted_tokens=attempted_tokens)
 
     def _usage_by_field(self, *, user_id: str, usage_month: str, field: str) -> dict[str, dict[str, int]]:
         if field not in {"provider_id", "model_id"}:
@@ -243,6 +261,7 @@ def _entry_from_row(row: sqlite3.Row) -> UsageLedgerEntry:
         input_tokens=row["input_tokens"],
         output_tokens=row["output_tokens"],
         total_tokens=row["total_tokens"],
+        estimated=bool(row["estimated"]),
         source=row["source"],
         usage_month=row["usage_month"],
         created_at=row["created_at"],

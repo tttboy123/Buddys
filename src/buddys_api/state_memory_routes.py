@@ -16,6 +16,8 @@ from buddys_api.state_memory_models import (
 )
 from buddys_api.state_memory_service import StateMemoryService
 from buddys_api.state_memory_store import StateMemoryStore
+from buddys_api.token_plan import TokenPlanLimitExceeded
+from buddys_api.providers.openai_compatible_provider import StateMemoryProviderError
 
 
 router = APIRouter(prefix="/me/buddies/{buddy_id}/state-memory", tags=["state-memory"])
@@ -82,8 +84,24 @@ def query_state_memory(
             device_id=buddy.device_id,
             question=request.question,
         )
+    except TokenPlanLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "token_plan_limit_exceeded",
+                "plan_id": exc.summary.plan_id,
+                "used_tokens": exc.summary.used_tokens,
+                "monthly_token_limit": exc.summary.monthly_token_limit,
+                "attempted_tokens": exc.attempted_tokens,
+                "usage_scope": "state_memory",
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+    except StateMemoryProviderError as exc:
+        if exc.code == "state_memory_query_unsupported":
+            raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
+        raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
 
 
 @router.post("/captures/{source}", status_code=201)
@@ -102,8 +120,22 @@ def create_state_memory_capture_proposal(
             source=source,
             content=request.content,
         )
+    except TokenPlanLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "token_plan_limit_exceeded",
+                "plan_id": exc.summary.plan_id,
+                "used_tokens": exc.summary.used_tokens,
+                "monthly_token_limit": exc.summary.monthly_token_limit,
+                "attempted_tokens": exc.attempted_tokens,
+                "usage_scope": "state_memory",
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+    except StateMemoryProviderError as exc:
+        raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
     return {
         "proposal": proposal,
         "state_revision": revision,

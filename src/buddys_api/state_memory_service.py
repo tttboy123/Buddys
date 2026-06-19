@@ -2,7 +2,17 @@ from __future__ import annotations
 
 import re
 
+from buddys_api.buddy_store import BuddyStore
 from buddys_api.cost_meter import CostMeter
+from buddys_api.provider_store import ProviderStore
+from buddys_api.providers.openai_compatible_provider import (
+    OpenAICompatibleProvider,
+    ParsedStateMemoryCapture,
+    ProviderConfigurationError,
+    ProviderUsage,
+    StateMemoryProviderError,
+    StateMemoryQueryUnderstanding,
+)
 from buddys_api.schemas import (
     ActionProposal,
     ActionTrace,
@@ -22,6 +32,7 @@ from buddys_api.state_memory_models import (
 )
 from buddys_api.state_memory_store import StateMemoryStore
 from buddys_api.sync_store import SyncStore
+from buddys_api.token_plan import TokenPlanLimitExceeded, UsageStore
 from buddys_api.trace_store import TraceStore
 
 
@@ -39,12 +50,20 @@ class StateMemoryService:
         provider: object,
         trace_store: TraceStore,
         cost_meter: CostMeter,
+        buddy_store: BuddyStore | None = None,
+        provider_store: ProviderStore | None = None,
+        usage_store: UsageStore | None = None,
+        provider_factory: object | None = None,
     ) -> None:
         self.store = store
         self.sync_store = sync_store
         self.provider = provider
         self.trace_store = trace_store
         self.cost_meter = cost_meter
+        self.buddy_store = buddy_store
+        self.provider_store = provider_store
+        self.usage_store = usage_store
+        self.provider_factory = provider_factory
 
     def create_capture_proposal(
         self,
@@ -54,7 +73,39 @@ class StateMemoryService:
         source: StateMemoryCaptureSource,
         content: str,
     ) -> tuple[StateMemoryPendingProposal, int]:
-        deltas, unrecognized = self._parse_capture(source=source, content=content)
+        provider = self._provider_for_user(user_id)
+        self._ensure_preflight_capacity(user_id=user_id, provider=provider, text=content)
+        space_id, device_id = self._capture_trace_context(user_id=user_id, buddy_id=buddy_id)
+        try:
+            deltas, unrecognized, usage = self._parse_capture(provider=provider, source=source, content=content)
+        except StateMemoryProviderError as exc:
+            self._record_provider_failure(
+                user_id=user_id,
+                buddy_id=buddy_id,
+                space_id=space_id,
+                device_id=device_id,
+                provider=provider,
+                usage=exc.usage,
+                intent_name="state_memory_capture",
+                summary=content,
+                failure_code=exc.code,
+            )
+            raise
+        try:
+            self._ensure_actual_capture_capacity(user_id=user_id, usage=usage)
+        except TokenPlanLimitExceeded:
+            self._record_provider_failure(
+                user_id=user_id,
+                buddy_id=buddy_id,
+                space_id=space_id,
+                device_id=device_id,
+                provider=provider,
+                usage=usage,
+                intent_name="state_memory_capture",
+                summary=content,
+                failure_code="token_plan_limit_exceeded",
+            )
+            raise
         proposal = self.store.save_pending_proposal(
             user_id=user_id,
             buddy_id=buddy_id,
@@ -62,6 +113,16 @@ class StateMemoryService:
             content=content,
             deltas=deltas,
             unrecognized=unrecognized,
+        )
+        trace_id = self._record_capture_trace(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            proposal=proposal,
+            content=content,
+            space_id=space_id,
+            device_id=device_id,
+            provider=provider,
+            usage=usage,
         )
         sync_event = self.sync_store.append_event(
             event_type="state_memory.proposal_created",
@@ -72,6 +133,7 @@ class StateMemoryService:
             payload_summary={
                 "buddy_id": buddy_id,
                 "proposal_id": proposal.proposal_id,
+                "trace_id": trace_id,
                 "source": source,
                 "delta_count": len(proposal.deltas),
                 "item_names": [delta.item_name for delta in proposal.deltas],
@@ -166,18 +228,54 @@ class StateMemoryService:
         question: str,
     ) -> StateMemoryQueryAnswer:
         items = self.store.list_items(user_id=user_id, buddy_id=buddy_id)
-        recipe_name, required_items = _match_recipe_question(question)
-        if recipe_name is not None:
-            answer = _build_missing_for_recipe_answer(
-                subject_name=recipe_name,
-                required_items=required_items,
-                items=items,
-            )
+        provider = self._provider_for_user(user_id)
+        self._ensure_preflight_capacity(user_id=user_id, provider=provider, text=question)
+        if hasattr(provider, "understand_state_memory_query"):
+            understanding = None
+            try:
+                understanding = provider.understand_state_memory_query(question=question)
+                self._ensure_actual_capture_capacity(user_id=user_id, usage=understanding.usage)
+                answer = self._build_answer_from_understanding(understanding=understanding, items=items)
+            except StateMemoryProviderError as exc:
+                self._record_provider_failure(
+                    user_id=user_id,
+                    buddy_id=buddy_id,
+                    space_id=space_id,
+                    device_id=device_id,
+                    provider=provider,
+                    usage=exc.usage or (understanding.usage if understanding is not None else None),
+                    intent_name="state_memory_query",
+                    summary=question,
+                    failure_code=exc.code,
+                )
+                raise
+            except TokenPlanLimitExceeded:
+                self._record_provider_failure(
+                    user_id=user_id,
+                    buddy_id=buddy_id,
+                    space_id=space_id,
+                    device_id=device_id,
+                    provider=provider,
+                    usage=understanding.usage if understanding is not None else None,
+                    intent_name="state_memory_query",
+                    summary=question,
+                    failure_code="token_plan_limit_exceeded",
+                )
+                raise
         else:
-            item_name = _extract_have_item_name(question)
-            if item_name is None:
-                raise ValueError("state_memory_query_unsupported")
-            answer = _build_have_item_answer(item_name=item_name, items=items)
+            understanding = None
+            recipe_name, required_items = _match_recipe_question(question)
+            if recipe_name is not None:
+                answer = _build_missing_for_recipe_answer(
+                    subject_name=recipe_name,
+                    required_items=list(required_items),
+                    items=items,
+                )
+            else:
+                item_name = _extract_have_item_name(question)
+                if item_name is None:
+                    raise ValueError("state_memory_query_unsupported")
+                answer = _build_have_item_answer(item_name=item_name, items=items)
 
         trace_id = self._record_query_trace(
             user_id=user_id,
@@ -186,6 +284,8 @@ class StateMemoryService:
             device_id=device_id,
             question=question,
             answer=answer,
+            provider=provider,
+            usage=understanding.usage if understanding is not None else None,
         )
         payload = answer.model_dump(mode="json")
         payload["trace_id"] = trace_id
@@ -194,21 +294,28 @@ class StateMemoryService:
     def _parse_capture(
         self,
         *,
+        provider: object,
         source: StateMemoryCaptureSource,
         content: str,
-    ) -> tuple[list[StateMemoryDelta], list[str]]:
-        parse_capture = getattr(self.provider, "parse_state_memory_capture", None)
+    ) -> tuple[list[StateMemoryDelta], list[str], ProviderUsage | None]:
+        parse_capture = getattr(provider, "parse_state_memory_capture", None)
         if parse_capture is None:
             raise ValueError("state_memory_capture_not_supported")
         parsed = parse_capture(source=source, content=content)
-        if isinstance(parsed, tuple):
+        if isinstance(parsed, ParsedStateMemoryCapture):
+            deltas = parsed.deltas
+            unrecognized = parsed.unrecognized
+            usage = parsed.usage
+        elif isinstance(parsed, tuple):
             deltas, unrecognized = parsed
+            usage = None
         else:
             deltas = parsed
             unrecognized = []
+            usage = None
         if not deltas and not unrecognized:
             raise ValueError("state_memory_capture_empty")
-        return deltas, unrecognized
+        return deltas, unrecognized, usage
 
     def _record_query_trace(
         self,
@@ -219,12 +326,33 @@ class StateMemoryService:
         device_id: str | None,
         question: str,
         answer: StateMemoryQueryAnswer,
+        provider: object,
+        usage: ProviderUsage | None,
     ) -> str:
         trace_id = new_id("trace")
-        input_tokens = len(question)
-        output_tokens = len(answer.summary)
-        provider_name = getattr(self.provider, "provider", "state_memory")
-        model_name = getattr(self.provider, "model", "state_memory-query-v0")
+        provider_name = getattr(provider, "provider", "state_memory")
+        model_name = getattr(provider, "model", "state_memory-query-v0")
+        if usage is None:
+            input_tokens = len(question)
+            output_tokens = len(answer.summary)
+            estimated = True
+        else:
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            estimated = usage.estimated
+        if self.usage_store is not None:
+            self.usage_store.record_usage(
+                user_id=user_id,
+                trace_id=trace_id,
+                buddy_id=buddy_id,
+                provider_id=provider_name,
+                model_id=model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                estimated=estimated,
+                source="state_memory_query",
+                enforce_hard_limit=False,
+            )
         cost_event = self.cost_meter.record_model_call(
             trace_id=trace_id,
             buddy_id=buddy_id,
@@ -283,6 +411,239 @@ class StateMemoryService:
         self.trace_store.save(trace)
         return trace_id
 
+    def _provider_for_user(self, user_id: str) -> object:
+        if self.provider_store is None:
+            return self.provider
+        real_configs = [config for config in self.provider_store.list_configs(user_id) if config.provider_type == "openai_compatible"]
+        if not real_configs:
+            return self.provider
+        if len(real_configs) > 1:
+            raise ProviderConfigurationError("provider_selection_ambiguous")
+        config = real_configs[0]
+        if not config.configured:
+            raise ProviderConfigurationError("provider_not_configured")
+        if callable(self.provider_factory):
+            return self.provider_factory(config)
+        return OpenAICompatibleProvider(
+            provider_id=config.provider_id,
+            base_url=config.base_url or "https://api.minimaxi.com/v1",
+            api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
+            model=config.default_model,
+        )
+
+    def _ensure_preflight_capacity(self, *, user_id: str, provider: object, text: str) -> None:
+        if self.usage_store is None:
+            return
+        if not getattr(provider, "requires_preflight_hard_limit", False):
+            return
+        attempted_tokens = max(len(text.strip()), 1) + max(getattr(provider, "preflight_token_reserve", 0), 0)
+        self.usage_store.ensure_within_hard_limit(user_id=user_id, attempted_tokens=attempted_tokens)
+
+    def _ensure_actual_capture_capacity(self, *, user_id: str, usage: ProviderUsage | None) -> None:
+        if self.usage_store is None or usage is None:
+            return
+        self.usage_store.ensure_within_hard_limit(
+            user_id=user_id,
+            attempted_tokens=usage.input_tokens + usage.output_tokens,
+        )
+
+    def _capture_trace_context(self, *, user_id: str, buddy_id: str) -> tuple[str, str | None]:
+        if self.buddy_store is None:
+            return "auth_space", None
+        buddy = self.buddy_store.get_for_user(buddy_id=buddy_id, user_id=user_id, created_via="auth")
+        return buddy.space_id, buddy.device_id
+
+    def _record_capture_trace(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        proposal: StateMemoryPendingProposal,
+        content: str,
+        space_id: str,
+        device_id: str | None,
+        provider: object,
+        usage: ProviderUsage | None,
+    ) -> str:
+        trace_id = new_id("trace")
+        provider_name = getattr(provider, "provider", "state_memory")
+        model_name = getattr(provider, "model", "state_memory-capture-v0")
+        if usage is None:
+            input_tokens = len(content)
+            output_tokens = max(len(proposal.deltas), 1)
+            estimated = True
+        else:
+            input_tokens = usage.input_tokens
+            output_tokens = usage.output_tokens
+            estimated = usage.estimated
+        if self.usage_store is not None:
+            self.usage_store.record_usage(
+                user_id=user_id,
+                trace_id=trace_id,
+                buddy_id=buddy_id,
+                provider_id=provider_name,
+                model_id=model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                estimated=estimated,
+                source="state_memory_capture",
+                enforce_hard_limit=False,
+            )
+        cost_event = self.cost_meter.record_model_call(
+            trace_id=trace_id,
+            buddy_id=buddy_id,
+            provider=provider_name,
+            model=model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        trace = ActionTrace(
+            trace_id=trace_id,
+            user_id=user_id,
+            buddy_id=buddy_id,
+            space_id=space_id,
+            device_id=device_id,
+            turn_id=new_id("turn"),
+            intent=Intent(
+                name="state_memory_capture",
+                summary=content,
+                confidence=1.0,
+                source="user_text",
+            ),
+            proposal=ActionProposal(
+                proposal_id=proposal.proposal_id,
+                trace_id=trace_id,
+                buddy_id=buddy_id,
+                action_type="memory_proposal",
+                summary=f"Captured {len(proposal.deltas)} state-memory deltas.",
+                requires_confirmation=True,
+                tool_id=None,
+                action=None,
+                args={
+                    "source": proposal.source,
+                    "content": proposal.content,
+                    "delta_count": len(proposal.deltas),
+                    "item_names": [delta.item_name for delta in proposal.deltas],
+                    "unrecognized": proposal.unrecognized,
+                },
+                risk_level="none",
+            ),
+            permission_decision=PermissionDecision(
+                policy_result="not_required",
+                confirmation_result="not_requested",
+                decided_by="policy",
+                reason="State-memory capture creates a proposal and requires explicit confirmation before state changes.",
+            ),
+            model_usage=ModelUsage(
+                provider=provider_name,
+                model=model_name,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                latency_ms=0,
+            ),
+            cost_refs=[cost_event.cost_event_id],
+        )
+        self.trace_store.save(trace)
+        return trace_id
+
+    def _build_answer_from_understanding(
+        self,
+        *,
+        understanding: StateMemoryQueryUnderstanding,
+        items: list[StateMemoryItem],
+    ) -> StateMemoryQueryAnswer:
+        if understanding.answer_type == "missing_for_recipe":
+            subject_name = (understanding.subject_name or "").strip()
+            if not subject_name or not understanding.required_items:
+                raise StateMemoryProviderError("model_response_invalid")
+            return _build_missing_for_recipe_answer(
+                subject_name=subject_name,
+                required_items=understanding.required_items,
+                items=items,
+            )
+        if understanding.answer_type == "have_item":
+            subject_name = (understanding.subject_name or "").strip()
+            if not subject_name:
+                raise StateMemoryProviderError("model_response_invalid")
+            return _build_have_item_answer(item_name=subject_name, items=items)
+        raise StateMemoryProviderError("state_memory_query_unsupported")
+
+    def _record_provider_failure(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        space_id: str,
+        device_id: str | None,
+        provider: object,
+        usage: ProviderUsage | None,
+        intent_name: str,
+        summary: str,
+        failure_code: str,
+    ) -> None:
+        if failure_code in {"provider_not_configured", "provider_selection_ambiguous"}:
+            return
+        trace_id = new_id("trace")
+        provider_name = getattr(provider, "provider", "state_memory")
+        model_name = getattr(provider, "model", f"{intent_name}-v0")
+        cost_refs: list[str] = []
+        model_usage = None
+        if usage is not None:
+            if self.usage_store is not None:
+                self.usage_store.record_usage(
+                    user_id=user_id,
+                    trace_id=trace_id,
+                    buddy_id=buddy_id,
+                    provider_id=provider_name,
+                    model_id=model_name,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    estimated=usage.estimated,
+                    source=intent_name,
+                    enforce_hard_limit=False,
+                )
+            cost_event = self.cost_meter.record_model_call(
+                trace_id=trace_id,
+                buddy_id=buddy_id,
+                provider=provider_name,
+                model=model_name,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+            )
+            cost_refs = [cost_event.cost_event_id]
+            model_usage = ModelUsage(
+                provider=provider_name,
+                model=model_name,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                latency_ms=0,
+            )
+        trace = ActionTrace(
+            trace_id=trace_id,
+            user_id=user_id,
+            buddy_id=buddy_id,
+            space_id=space_id,
+            device_id=device_id,
+            turn_id=new_id("turn"),
+            intent=Intent(
+                name=intent_name,
+                summary=summary,
+                confidence=1.0,
+                source="user_text",
+            ),
+            proposal=None,
+            permission_decision=PermissionDecision(
+                policy_result="not_required",
+                confirmation_result="not_requested",
+                decided_by="policy",
+                reason="State-memory model call failed before a user-visible proposal or answer could be produced.",
+            ),
+            model_usage=model_usage,
+            cost_refs=cost_refs,
+            failure_class=failure_code,
+        )
+        self.trace_store.save(trace)
+
 
 def _build_have_item_answer(*, item_name: str, items: list[StateMemoryItem]) -> StateMemoryQueryAnswer:
     normalized_target = _normalize_item_name(item_name)
@@ -304,7 +665,7 @@ def _build_have_item_answer(*, item_name: str, items: list[StateMemoryItem]) -> 
 def _build_missing_for_recipe_answer(
     *,
     subject_name: str,
-    required_items: tuple[str, ...],
+    required_items: list[str] | tuple[str, ...],
     items: list[StateMemoryItem],
 ) -> StateMemoryQueryAnswer:
     required_names = {_normalize_item_name(name) for name in required_items}

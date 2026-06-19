@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 ProviderType = Literal["mock", "openai_compatible"]
+MINIMAX_OPENAI_BASE_URL = "https://api.minimaxi.com/v1"
 
 
 class ProviderCatalogItem(BaseModel):
@@ -50,6 +51,16 @@ class ProviderConfigRequest(BaseModel):
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) is None:
             raise ValueError("api_key_env_var must be an environment variable name")
         return value
+
+    @model_validator(mode="after")
+    def openai_compatible_must_use_openai_api_key_env_var(self) -> "ProviderConfigRequest":
+        if self.provider_type != "openai_compatible":
+            return self
+        if self.api_key_env_var != "OPENAI_API_KEY":
+            raise ValueError("openai_compatible providers must use OPENAI_API_KEY")
+        if self.base_url is not None and self.base_url.rstrip("/") != MINIMAX_OPENAI_BASE_URL:
+            raise ValueError("openai_compatible providers must use the MiniMax official base URL")
+        return self
 
 
 class ProviderConfigPublic(BaseModel):

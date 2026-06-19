@@ -88,3 +88,53 @@ def test_hard_limit_rejects_before_recording_over_limit_usage() -> None:
     summary = store.usage_summary("user_demo")
     assert summary.used_tokens == limit
     assert [entry.trace_id for entry in store.list_usage("user_demo")] == ["trace_at_limit"]
+
+
+def test_ensure_within_hard_limit_raises_without_recording_usage() -> None:
+    connection = connect_db(":memory:")
+    initialize_database(connection)
+    store = UsageStore(connection)
+    limit = store.usage_summary("user_demo").monthly_token_limit
+    assert limit is not None
+
+    store.record_usage(
+        user_id="user_demo",
+        trace_id="trace_at_limit",
+        buddy_id="buddy_home",
+        provider_id="mock_deterministic",
+        model_id="mock-home-v0",
+        input_tokens=limit,
+        output_tokens=0,
+        source="test_seed",
+    )
+
+    with pytest.raises(TokenPlanLimitExceeded):
+        store.ensure_within_hard_limit(user_id="user_demo", attempted_tokens=1)
+
+    assert [entry.trace_id for entry in store.list_usage("user_demo")] == ["trace_at_limit"]
+
+
+def test_ensure_within_hard_limit_rejects_near_limit_reserve_without_recording_usage() -> None:
+    connection = connect_db(":memory:")
+    initialize_database(connection)
+    store = UsageStore(connection)
+    limit = store.usage_summary("user_demo").monthly_token_limit
+    assert limit is not None
+
+    store.record_usage(
+        user_id="user_demo",
+        trace_id="trace_near_limit",
+        buddy_id="buddy_home",
+        provider_id="mock_deterministic",
+        model_id="mock-home-v0",
+        input_tokens=limit - 8,
+        output_tokens=0,
+        source="test_seed",
+    )
+
+    with pytest.raises(TokenPlanLimitExceeded):
+        store.ensure_within_hard_limit(user_id="user_demo", attempted_tokens=16)
+
+    summary = store.usage_summary("user_demo")
+    assert summary.used_tokens == limit - 8
+    assert [entry.trace_id for entry in store.list_usage("user_demo")] == ["trace_near_limit"]

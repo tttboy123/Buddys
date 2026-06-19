@@ -85,6 +85,9 @@ def create_app(
         provider=app.state.runtime.provider,
         trace_store=app.state.runtime.trace_store,
         cost_meter=app.state.runtime.cost_meter,
+        buddy_store=app.state.buddy_store,
+        provider_store=app.state.provider_store,
+        usage_store=app.state.usage_store,
     )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(auth_router)

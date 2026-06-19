@@ -105,6 +105,7 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             input_tokens INTEGER NOT NULL CHECK (input_tokens >= 0),
             output_tokens INTEGER NOT NULL CHECK (output_tokens >= 0),
             total_tokens INTEGER NOT NULL CHECK (total_tokens >= 0),
+            estimated INTEGER NOT NULL DEFAULT 0 CHECK (estimated IN (0, 1)),
             source TEXT NOT NULL,
             usage_month TEXT NOT NULL,
             created_at TEXT NOT NULL
@@ -249,5 +250,12 @@ def initialize_database(connection: sqlite3.Connection) -> None:
     if "unrecognized_json" not in state_memory_pending_columns:
         connection.execute(
             "ALTER TABLE state_memory_pending_proposals ADD COLUMN unrecognized_json TEXT NOT NULL DEFAULT '[]'"
+        )
+    usage_ledger_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(usage_ledger)").fetchall()
+    }
+    if "estimated" not in usage_ledger_columns:
+        connection.execute(
+            "ALTER TABLE usage_ledger ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0 CHECK (estimated IN (0, 1))"
         )
     connection.commit()

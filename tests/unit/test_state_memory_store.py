@@ -1,3 +1,5 @@
+import pytest
+
 from buddys_api.auth_store import AuthStore
 from buddys_api.buddy_store import BuddyStore
 from buddys_api.db import connect_db, initialize_database
@@ -229,6 +231,110 @@ def test_proposal_lifecycle_is_scoped_to_owner_and_safe_against_double_apply() -
     history = store.list_history(user_id=owner_id, buddy_id=buddy_id)
     assert [(item.name, item.quantity) for item in items] == [("可乐", 2.0)]
     assert [entry.item_name for entry in history] == ["可乐"]
+
+
+def test_reject_and_correct_raise_when_proposal_is_no_longer_pending() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    reject_proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="conversation",
+        content="香料用完了",
+        deltas=[StateMemoryDelta(item_name="香料", operation="remove", source="conversation")],
+    )
+    store.reject_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=reject_proposal.proposal_id)
+
+    with pytest.raises(ValueError, match="proposal_not_pending"):
+        store.reject_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=reject_proposal.proposal_id)
+
+    correct_proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="photo",
+        content="fridge.jpg",
+        deltas=[
+            StateMemoryDelta(
+                item_name="牛奶",
+                operation="upsert",
+                quantity=2,
+                unit="盒",
+                confidence=0.65,
+                source="photo",
+            )
+        ],
+    )
+    store.correct_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=correct_proposal.proposal_id,
+        corrected_deltas=[
+            StateMemoryDelta(
+                item_name="牛奶",
+                operation="upsert",
+                quantity=1,
+                unit="盒",
+                confidence=1.0,
+                source="manual",
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="proposal_not_pending"):
+        store.correct_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            proposal_id=correct_proposal.proposal_id,
+            corrected_deltas=[
+                StateMemoryDelta(
+                    item_name="牛奶",
+                    operation="upsert",
+                    quantity=3,
+                    unit="盒",
+                    confidence=1.0,
+                    source="manual",
+                )
+            ],
+        )
+
+
+def test_update_proposal_locked_requires_database_row_to_still_be_pending() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    proposal = store.save_pending_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        source="voice",
+        content="我买了五个鸡蛋",
+        deltas=[
+            StateMemoryDelta(
+                item_name="鸡蛋",
+                operation="upsert",
+                quantity=5,
+                unit="个",
+                confidence=0.92,
+                source="voice",
+            )
+        ],
+    )
+    snapshot = store.get_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+
+    with store.connection:
+        store.connection.execute(
+            """
+            UPDATE state_memory_pending_proposals
+            SET status = 'confirmed'
+            WHERE proposal_id = ? AND user_id = ? AND buddy_id = ?
+            """,
+            (proposal.proposal_id, owner_id, buddy_id),
+        )
+
+    with pytest.raises(ValueError, match="proposal_not_pending"):
+        with store.connection:
+            store._update_proposal_locked(snapshot, status="rejected", require_pending=True)
+
+    persisted = store.get_proposal(user_id=owner_id, buddy_id=buddy_id, proposal_id=proposal.proposal_id)
+    assert persisted.status == "confirmed"
 
 
 def test_consume_or_remove_nonexistent_item_does_not_create_phantom_records() -> None:
