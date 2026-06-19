@@ -2,6 +2,7 @@ const state = {
   buddyId: null,
   proposalId: null,
   traceId: null,
+  stateRevision: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -60,7 +61,33 @@ async function createBuddy() {
   $("overviewTitle").textContent = buddy.name;
   $("buddySpace").textContent = buddy.space_id;
   setDevice("idle", "•_•", "Home Buddy online");
+  await loadSyncSnapshot();
   return buddy;
+}
+
+async function loadSyncSnapshot() {
+  const snapshot = await requestJson("/sync/snapshot");
+  state.stateRevision = snapshot.state_revision || 0;
+
+  const buddy = snapshot.buddies && snapshot.buddies[0];
+  if (buddy) {
+    state.buddyId = buddy.buddy_id;
+    $("overviewTitle").textContent = buddy.name;
+    $("buddySpace").textContent = buddy.space_id;
+    $("buddyState").textContent = buddy.status;
+  }
+
+  const traces = snapshot.traces || [];
+  const latestTrace = traces[traces.length - 1];
+  if (latestTrace) {
+    state.traceId = latestTrace.trace_id;
+  }
+
+  const costSummary = snapshot.cost_summary || {};
+  $("tokenUsage").textContent = String(costSummary.total_tokens || 0);
+  $("modelCost").textContent = money(
+    ((costSummary.model_cost_usd || 0) + (costSummary.tool_cost_usd || 0) + (costSummary.log_cost_usd || 0)) * 7.25,
+  );
 }
 
 async function ensureBuddy() {
@@ -93,6 +120,7 @@ async function runBuddysDemo() {
 
   state.proposalId = message.proposal_id;
   state.traceId = message.trace_id;
+  state.stateRevision = message.state_revision || state.stateRevision;
   $("assistantMessage").textContent = message.assistant_message;
   $("proposalSummary").textContent = "把 living_room_light 亮度调到 35%";
   $("proposalPolicy").textContent = "A-level requires confirmation";
@@ -109,6 +137,7 @@ async function runBuddysDemo() {
     "Buddy understanding: adjust_light",
     "Policy: A-level action requires confirmation",
   ]);
+  await loadSyncSnapshot();
 }
 
 async function approveProposal() {
@@ -123,6 +152,7 @@ async function approveProposal() {
   const trace = await requestJson(`/traces/${confirmed.trace_id}`);
   const costs = await requestJson("/cost-events");
   renderResult(trace, costs.cost_events);
+  await loadSyncSnapshot();
 }
 
 function renderResult(trace, costEvents) {
@@ -197,4 +227,5 @@ document.addEventListener("DOMContentLoaded", () => {
   $("mobileApproveButton").addEventListener("click", approveProposal);
   $("resetButton").addEventListener("click", resetDemo);
   checkHealth();
+  loadSyncSnapshot().catch(() => {});
 });

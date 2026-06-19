@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from buddys_api.device_models import DeviceDesiredState
 from buddys_api.device_store import DeviceRegistry
@@ -71,6 +72,37 @@ def test_pair_device_rejects_unknown_buddy_and_owner_mismatch() -> None:
     )
     assert mismatch_response.status_code == 403
     assert mismatch_response.json() == {"detail": {"code": "agent_machine_owner_mismatch"}}
+
+
+def test_unauthenticated_pair_device_rejects_auth_owned_buddy_without_side_effects(tmp_path) -> None:
+    store = DeviceRegistry()
+    client = TestClient(create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3"))
+    owner_token = register(client, "owner@example.com")
+    auth_buddy_response = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Private Buddy", "space_id": "study"},
+    )
+    assert auth_buddy_response.status_code == 201
+    auth_buddy = auth_buddy_response.json()
+
+    response = client.post(
+        "/devices/device_body_auth_probe/pair",
+        json=pair_payload(
+            auth_buddy,
+            owner_user_id=auth_buddy["user_id"],
+            idempotency_key="pair-auth-owned",
+            pairing_token="pair-token-auth-owned",
+        ),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": {"code": "buddy_not_found"}}
+    with pytest.raises(KeyError):
+        store.get_device("device_body_auth_probe")
+    with pytest.raises(KeyError):
+        store.get_binding(auth_buddy["buddy_id"])
+    assert store.list_events("device_body_auth_probe") == []
 
 
 def test_pair_device_rejects_invalid_url_empty_fields_and_missing_pairing_token() -> None:
@@ -295,6 +327,12 @@ def create_buddy(client: TestClient, user_id: str = "user_demo") -> dict[str, ob
     response = client.post("/buddies", json={"user_id": user_id})
     assert response.status_code == 201
     return response.json()
+
+
+def register(client: TestClient, email: str) -> str:
+    response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
+    assert response.status_code == 201
+    return response.json()["access_token"]
 
 
 def pair_payload(

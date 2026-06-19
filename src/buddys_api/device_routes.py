@@ -72,7 +72,7 @@ def pair_device(device_id: DeviceIdPath, request: PairDeviceRequest, fastapi_req
     device_id = _validate_path_id(device_id, "device_id")
     runtime = _runtime(fastapi_request)
     device_store = _device_store(fastapi_request)
-    buddy = _require_buddy(runtime, request.buddy_id)
+    buddy = _require_legacy_buddy(runtime, request.buddy_id)
     if request.agent_machine.owner_user_id != buddy.user_id:
         raise HTTPException(status_code=403, detail={"code": "agent_machine_owner_mismatch"})
 
@@ -112,6 +112,19 @@ def pair_device(device_id: DeviceIdPath, request: PairDeviceRequest, fastapi_req
     except DuplicatePairingError as exc:
         raise HTTPException(status_code=409, detail={"code": "pairing_token_already_used"}) from exc
 
+    if pairing.device is device:
+        fastapi_request.app.state.sync_store.append_event(
+            event_type="device.paired",
+            entity_type="device",
+            entity_id=pairing.device.device_id,
+            actor_user_id=buddy.user_id,
+            visibility="legacy",
+            payload_summary={
+                "device_id": pairing.device.device_id,
+                "buddy_id": pairing.device.buddy_id,
+                "agent_machine_id": pairing.agent_machine.agent_machine_id,
+            },
+        )
     return {"device": pairing.device, "agent_machine": pairing.agent_machine, "binding": pairing.binding}
 
 
@@ -128,7 +141,17 @@ def device_heartbeat(device_id: DeviceIdPath, request: DeviceHeartbeatRequest, f
         current_state=request.current_state,
         idempotency_key=request.idempotency_key,
     )
-    return device_store.save_heartbeat(heartbeat)
+    saved = device_store.save_heartbeat(heartbeat)
+    if saved is heartbeat:
+        fastapi_request.app.state.sync_store.append_event(
+            event_type="device.heartbeat",
+            entity_type="device",
+            entity_id=device_id,
+            actor_user_id=None,
+            visibility="legacy",
+            payload_summary={"device_id": device_id, "current_state": saved.current_state},
+        )
+    return saved
 
 
 @router.get("/{device_id}/desired-state")
@@ -150,7 +173,17 @@ def submit_device_event(device_id: DeviceIdPath, request: DeviceEventRequest, fa
         idempotency_key=request.idempotency_key,
         payload=request.payload,
     )
-    return device_store.append_event(event)
+    saved = device_store.append_event(event)
+    if saved is event:
+        fastapi_request.app.state.sync_store.append_event(
+            event_type="device.event",
+            entity_type="device",
+            entity_id=device_id,
+            actor_user_id=None,
+            visibility="legacy",
+            payload_summary={"device_id": device_id, "event_type": saved.event_type},
+        )
+    return saved
 
 
 @router.get("/{device_id}/ota/check")
@@ -173,9 +206,9 @@ def _device_store(request: Request) -> DeviceRegistry:
     return request.app.state.device_store
 
 
-def _require_buddy(runtime: BuddysRuntime, buddy_id: str) -> Buddy:
+def _require_legacy_buddy(runtime: BuddysRuntime, buddy_id: str) -> Buddy:
     try:
-        return runtime._get_buddy(buddy_id)
+        return runtime._get_legacy_buddy(buddy_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "buddy_not_found"}) from exc
 

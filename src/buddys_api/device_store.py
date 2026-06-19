@@ -48,6 +48,9 @@ class DeviceRegistry:
         except KeyError as exc:
             raise KeyError(f"device not found: {device_id}") from exc
 
+    def list_devices(self) -> list[Device]:
+        return list(self._devices.values())
+
     def save_agent_machine(self, agent_machine: AgentMachine) -> AgentMachine:
         self._agent_machines[agent_machine.agent_machine_id] = agent_machine
         return agent_machine
@@ -58,6 +61,9 @@ class DeviceRegistry:
         except KeyError as exc:
             raise KeyError(f"agent machine not found: {agent_machine_id}") from exc
 
+    def list_agent_machines(self) -> list[AgentMachine]:
+        return list(self._agent_machines.values())
+
     def save_binding(self, binding: BuddyRuntimeBinding) -> BuddyRuntimeBinding:
         self._bindings_by_buddy[binding.buddy_id] = binding
         return binding
@@ -67,6 +73,9 @@ class DeviceRegistry:
             return self._bindings_by_buddy[buddy_id]
         except KeyError as exc:
             raise KeyError(f"binding not found for buddy: {buddy_id}") from exc
+
+    def list_bindings(self) -> list[BuddyRuntimeBinding]:
+        return list(self._bindings_by_buddy.values())
 
     def save_heartbeat(self, heartbeat: DeviceHeartbeat) -> DeviceHeartbeat:
         idempotency_key = (heartbeat.device_id, heartbeat.idempotency_key)
@@ -81,6 +90,9 @@ class DeviceRegistry:
             return self._latest_heartbeat_by_device[device_id]
         except KeyError as exc:
             raise KeyError(f"heartbeat not found for device: {device_id}") from exc
+
+    def list_latest_heartbeats(self) -> list[DeviceHeartbeat]:
+        return list(self._latest_heartbeat_by_device.values())
 
     def set_desired_state(self, desired_state: DeviceDesiredState) -> DeviceDesiredState:
         self._desired_state_by_device[desired_state.device_id] = desired_state
@@ -102,6 +114,9 @@ class DeviceRegistry:
 
     def list_events(self, device_id: str) -> list[DeviceEvent]:
         return [event for event in self._device_events if event.device_id == device_id]
+
+    def list_all_events(self) -> list[DeviceEvent]:
+        return list(self._device_events)
 
     def pair_device(
         self,

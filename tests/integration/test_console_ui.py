@@ -106,3 +106,12 @@ def test_console_timeline_does_not_render_trace_content_with_inner_html() -> Non
     assert "innerHTML" not in js_response.text
     assert "createElement(\"li\")" in js_response.text
     assert "textContent = item" in js_response.text
+
+
+def test_console_uses_sync_snapshot_as_shared_state_source() -> None:
+    client = make_client()
+
+    js_response = client.get("/static/app.js")
+
+    assert "/sync/snapshot" in js_response.text
+    assert "loadSyncSnapshot" in js_response.text

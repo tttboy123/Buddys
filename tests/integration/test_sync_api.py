@@ -1,0 +1,210 @@
+from fastapi.testclient import TestClient
+
+from buddys_api.main import create_app
+
+
+def test_sync_snapshot_and_events_do_not_leak_sensitive_trace_or_pairing_payloads(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+
+    buddy = client.post("/buddies", json={"user_id": "user_demo"}).json()
+    message_response = client.post(
+        f"/buddies/{buddy['buddy_id']}/messages",
+        json={
+            "user_id": "user_demo",
+            "message": "SECRET_TOKEN=abc123 raw private message 把客厅灯调暗",
+        },
+    )
+    assert message_response.status_code == 200
+
+    pair_response = client.post(
+        "/devices/device_body_sensitive/pair",
+        json={
+            "buddy_id": buddy["buddy_id"],
+            "space_id": buddy["space_id"],
+            "public_key": "public-key-should-not-sync",
+            "firmware_version": "0.1.0",
+            "pairing_token": "pairing-token-should-not-sync",
+            "agent_machine": {
+                "agent_machine_id": "agent_machine_sensitive",
+                "owner_user_id": "user_demo",
+                "machine_type": "local_mac",
+                "endpoint": "https://agent-machine.example.test",
+                "public_key": "public-key-should-not-sync",
+                "runtime_version": "0.1.0",
+            },
+            "idempotency_key": "pair-sensitive-sync-001",
+        },
+    )
+    assert pair_response.status_code == 201
+
+    snapshot_response = client.get("/sync/snapshot")
+    events_response = client.get("/sync/events", params={"since_revision": 0})
+    assert snapshot_response.status_code == 200
+    assert events_response.status_code == 200
+
+    snapshot = snapshot_response.json()
+    events = events_response.json()
+    trace_summary = snapshot["traces"][0]
+    assert trace_summary["trace_id"] == message_response.json()["trace_id"]
+    assert trace_summary["proposal_id"] == message_response.json()["proposal_id"]
+    assert set(trace_summary) == {
+        "trace_id",
+        "buddy_id",
+        "space_id",
+        "device_id",
+        "turn_id",
+        "proposal_id",
+        "requires_confirmation",
+        "permission_policy_result",
+        "tool_result_status",
+        "cost_refs",
+        "created_at",
+        "updated_at",
+    }
+
+    for sync_payload in (snapshot, events):
+        serialized = str(sync_payload)
+        for forbidden in (
+            "SECRET_TOKEN",
+            "abc123",
+            "raw private message",
+            "pairing-token-should-not-sync",
+            "public-key-should-not-sync",
+        ):
+            assert forbidden not in serialized
+
+
+def test_sync_snapshot_and_events_include_legacy_runtime_device_trace_and_cost_state(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+
+    initial_snapshot = client.get("/sync/snapshot")
+    assert initial_snapshot.status_code == 200
+    assert initial_snapshot.json()["state_revision"] == 0
+
+    buddy = client.post("/buddies", json={"user_id": "user_demo"}).json()
+    message = client.post(
+        f"/buddies/{buddy['buddy_id']}/messages",
+        json={"user_id": "user_demo", "message": "把客厅灯调暗"},
+    ).json()
+    confirm = client.post(f"/proposals/{message['proposal_id']}/confirm", json={"approved": True}).json()
+    pair_response = client.post("/devices/device_body_001/pair", json=pair_payload(buddy))
+    assert pair_response.status_code == 201
+    heartbeat_response = client.post(
+        "/devices/device_body_001/heartbeat",
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-sync-001",
+        },
+    )
+    assert heartbeat_response.status_code == 200
+    event_response = client.post(
+        "/devices/device_body_001/events",
+        json={"event_type": "ack", "idempotency_key": "event-sync-001", "payload": {"source": "button"}},
+    )
+    assert event_response.status_code == 201
+
+    snapshot_response = client.get("/sync/snapshot")
+    assert snapshot_response.status_code == 200
+    snapshot = snapshot_response.json()
+    assert snapshot["state_revision"] >= 6
+    assert snapshot["buddies"][0]["buddy_id"] == buddy["buddy_id"]
+    assert snapshot["devices"][0]["device_id"] == "device_body_001"
+    assert snapshot["agent_machines"][0]["agent_machine_id"] == "agent_machine_home_mac"
+    assert snapshot["bindings"][0]["buddy_id"] == buddy["buddy_id"]
+    assert snapshot["latest_heartbeats"]["device_body_001"]["current_state"] == "idle"
+    assert snapshot["desired_states"]["device_body_001"]["state"] == "idle"
+    assert snapshot["device_events"][0]["event_type"] == "ack"
+    assert snapshot["traces"][0]["trace_id"] == confirm["trace_id"]
+    assert snapshot["cost_summary"]["event_count"] == 1
+    assert snapshot["cost_summary"]["total_tokens"] > 0
+    assert snapshot["plan_usage"] == {}
+    assert snapshot["agents"] == []
+
+    events_response = client.get("/sync/events", params={"since_revision": 0})
+    assert events_response.status_code == 200
+    event_feed = events_response.json()
+    revisions = [event["revision"] for event in event_feed["events"]]
+    assert revisions == sorted(revisions)
+    assert len(revisions) == len(set(revisions))
+    assert event_feed["state_revision"] == revisions[-1]
+    assert {
+        "buddy.created",
+        "message.proposal_created",
+        "proposal.confirmed",
+        "device.paired",
+        "device.heartbeat",
+        "device.event",
+    }.issubset({event["event_type"] for event in event_feed["events"]})
+
+    later_events = client.get("/sync/events", params={"since_revision": revisions[-2]}).json()["events"]
+    assert [event["revision"] for event in later_events] == [revisions[-1]]
+    assert "pairing_token" not in str(event_feed).lower()
+    assert "public_key" not in str(event_feed).lower()
+
+
+def test_sync_snapshot_and_events_do_not_leak_auth_owned_buddies_to_unauthenticated_clients(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    owner_token = register(client, "owner@example.com")
+    other_token = register(client, "other@example.com")
+
+    auth_buddy_response = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Private Buddy", "space_id": "study"},
+    )
+    assert auth_buddy_response.status_code == 201
+    private_buddy = auth_buddy_response.json()
+    legacy_buddy = client.post("/buddies", json={"user_id": "legacy_user"}).json()
+
+    unauth_snapshot = client.get("/sync/snapshot").json()
+    assert [buddy["buddy_id"] for buddy in unauth_snapshot["buddies"]] == [legacy_buddy["buddy_id"]]
+    assert private_buddy["buddy_id"] not in str(unauth_snapshot)
+
+    owner_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    assert [buddy["buddy_id"] for buddy in owner_snapshot["buddies"]] == [private_buddy["buddy_id"]]
+    assert legacy_buddy["buddy_id"] not in str(owner_snapshot)
+
+    other_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {other_token}"}).json()
+    assert other_snapshot["buddies"] == []
+    assert private_buddy["buddy_id"] not in str(other_snapshot)
+
+    unauth_events = client.get("/sync/events", params={"since_revision": 0}).json()["events"]
+    assert [event["event_type"] for event in unauth_events] == ["buddy.created"]
+    assert private_buddy["buddy_id"] not in str(unauth_events)
+
+    owner_events = client.get(
+        "/sync/events",
+        params={"since_revision": 0},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    ).json()["events"]
+    assert [event["event_type"] for event in owner_events] == ["buddy.created"]
+    assert owner_events[0]["entity_id"] == private_buddy["buddy_id"]
+    assert legacy_buddy["buddy_id"] not in str(owner_events)
+
+
+def register(client: TestClient, email: str) -> str:
+    response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
+    assert response.status_code == 201
+    return response.json()["access_token"]
+
+
+def pair_payload(buddy: dict[str, object]) -> dict[str, object]:
+    return {
+        "buddy_id": buddy["buddy_id"],
+        "space_id": buddy["space_id"],
+        "public_key": "device-public-key",
+        "firmware_version": "0.1.0",
+        "pairing_token": "pair-token-sync-001",
+        "agent_machine": {
+            "agent_machine_id": "agent_machine_home_mac",
+            "owner_user_id": "user_demo",
+            "machine_type": "local_mac",
+            "endpoint": "https://agent-machine.example.test",
+            "public_key": "agent-machine-public-key",
+            "runtime_version": "0.1.0",
+        },
+        "idempotency_key": "pair-sync-001",
+    }

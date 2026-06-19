@@ -10,10 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from buddys_api.adapters.mock_home import MockHomeAdapter
+from buddys_api.auth_routes import router as auth_router
+from buddys_api.auth_store import AuthStore
+from buddys_api.buddy_store import BuddyStore
+from buddys_api.db import connect_db, initialize_database
 from buddys_api.device_routes import router as device_router
 from buddys_api.device_store import DeviceRegistry
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import ActionTrace, Buddy, CostEvent
+from buddys_api.sync_routes import router as sync_router
+from buddys_api.sync_store import SyncStore
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -42,12 +48,26 @@ class ConfirmProposalRequest(BaseModel):
         raise ValueError("confirmation decision is required")
 
 
-def create_app(runtime: BuddysRuntime | None = None, device_store: DeviceRegistry | None = None) -> FastAPI:
+def create_app(
+    runtime: BuddysRuntime | None = None,
+    device_store: DeviceRegistry | None = None,
+    db_path: str | Path | None = None,
+) -> FastAPI:
     app = FastAPI(title="Buddys Runtime API")
-    app.state.runtime = runtime or _runtime_from_env()
+    connection = connect_db(_db_path(db_path))
+    initialize_database(connection)
+    app.state.db = connection
+    app.state.auth_store = AuthStore(connection)
+    app.state.buddy_store = BuddyStore(connection)
+    app.state.sync_store = SyncStore(connection)
+    app.state.runtime = runtime or _runtime_from_env(app.state.buddy_store)
+    if runtime is not None and runtime.buddy_store is None:
+        runtime.buddy_store = app.state.buddy_store
     app.state.device_store = device_store or DeviceRegistry()
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.include_router(auth_router)
     app.include_router(device_router)
+    app.include_router(sync_router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -63,19 +83,28 @@ def create_app(runtime: BuddysRuntime | None = None, device_store: DeviceRegistr
 
     @app.post("/buddies", status_code=201)
     def create_buddy(request: CreateBuddyRequest) -> Buddy:
-        return app.state.runtime.create_home_buddy(user_id=request.user_id)
+        buddy = app.state.runtime.create_home_buddy(user_id=request.user_id)
+        app.state.sync_store.append_event(
+            event_type="buddy.created",
+            entity_type="buddy",
+            entity_id=buddy.buddy_id,
+            actor_user_id=buddy.user_id,
+            visibility="legacy",
+            payload_summary={"buddy_id": buddy.buddy_id, "user_id": buddy.user_id, "space_id": buddy.space_id},
+        )
+        return buddy
 
     @app.get("/buddies/{buddy_id}")
     def get_buddy(buddy_id: str) -> Buddy:
         try:
-            return app.state.runtime._get_buddy(buddy_id)
+            return app.state.runtime._get_legacy_buddy(buddy_id)
         except KeyError as exc:
             raise _not_found("buddy_not_found") from exc
 
     @app.post("/buddies/{buddy_id}/messages")
     def send_message(buddy_id: str, request: SendMessageRequest) -> dict[str, object]:
         try:
-            proposal = app.state.runtime.submit_message(
+            proposal = app.state.runtime.submit_legacy_message(
                 buddy_id=buddy_id,
                 user_id=request.user_id,
                 text=request.message,
@@ -86,12 +115,28 @@ def create_app(runtime: BuddysRuntime | None = None, device_store: DeviceRegistr
             raise HTTPException(status_code=403, detail={"code": "buddy_access_denied"}) from exc
 
         trace = app.state.runtime.trace_store.get(proposal.trace_id)
+        sync_event = app.state.sync_store.append_event(
+            event_type="message.proposal_created",
+            entity_type="trace",
+            entity_id=trace.trace_id,
+            actor_user_id=trace.user_id,
+            visibility="legacy",
+            payload_summary={
+                "trace_id": trace.trace_id,
+                "buddy_id": trace.buddy_id,
+                "proposal_id": proposal.proposal_id,
+                "requires_confirmation": proposal.requires_confirmation,
+                "cost_event_ids": trace.cost_refs,
+                "message_length": len(request.message),
+            },
+        )
         return {
             "trace_id": proposal.trace_id,
             "assistant_message": _assistant_message(proposal.summary, proposal.requires_confirmation),
             "proposal_id": proposal.proposal_id,
             "requires_confirmation": proposal.requires_confirmation,
             "cost_event_ids": trace.cost_refs,
+            "state_revision": sync_event.revision,
         }
 
     @app.post("/proposals/{proposal_id}/confirm")
@@ -106,11 +151,26 @@ def create_app(runtime: BuddysRuntime | None = None, device_store: DeviceRegistr
         except KeyError as exc:
             raise _not_found("proposal_not_found") from exc
 
+        sync_event = app.state.sync_store.append_event(
+            event_type="proposal.confirmed",
+            entity_type="trace",
+            entity_id=trace.trace_id,
+            actor_user_id=trace.user_id,
+            visibility="legacy",
+            payload_summary={
+                "trace_id": trace.trace_id,
+                "proposal_id": proposal_id,
+                "buddy_id": trace.buddy_id,
+                "approved": approved,
+                "tool_result_status": trace.tool_result.status if trace.tool_result else None,
+            },
+        )
         return {
             "proposal_id": proposal_id,
             "trace_id": trace.trace_id,
             "permission_decision": trace.permission_decision,
             "tool_result": trace.tool_result,
+            "state_revision": sync_event.revision,
         }
 
     @app.get("/traces/{trace_id}")
@@ -137,13 +197,19 @@ def _not_found(code: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": code})
 
 
-def _runtime_from_env() -> BuddysRuntime:
+def _db_path(db_path: str | Path | None) -> str | Path:
+    if db_path is not None:
+        return db_path
+    return os.getenv("BUDDYS_DB_PATH", ":memory:")
+
+
+def _runtime_from_env(buddy_store: BuddyStore | None = None) -> BuddysRuntime:
     can_control_devices = os.getenv("BUDDYS_MOCK_CAN_CONTROL_DEVICES", "true").lower() not in {
         "0",
         "false",
         "no",
     }
-    return BuddysRuntime(adapter=MockHomeAdapter(can_control_devices=can_control_devices))
+    return BuddysRuntime(adapter=MockHomeAdapter(can_control_devices=can_control_devices), buddy_store=buddy_store)
 
 
 app = create_app()
