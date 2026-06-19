@@ -1007,6 +1007,174 @@ def test_state_memory_real_query_uses_model_understanding_and_records_real_usage
     assert cost_events[0]["model"] == "MiniMax-M3"
 
 
+def test_state_memory_real_query_recipe_synonym_matches_available_inventory(tmp_path, monkeypatch) -> None:
+    import httpx
+    import json
+
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-provider-test")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    provider_response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "provider_id": "minimax-openai",
+            "display_name": "MiniMax OpenAI Compatible",
+            "provider_type": "openai_compatible",
+            "base_url": "https://api.minimaxi.com/v1",
+            "api_key_env_var": "OPENAI_API_KEY",
+            "default_model": "MiniMax-M3",
+        },
+    )
+    assert provider_response.status_code == 200
+
+    for name in ("五花肉", "老抽", "冰糖"):
+        app.state.state_memory_store.create_item(
+            user_id=buddy["user_id"],
+            buddy_id=buddy["buddy_id"],
+            name=name,
+            category="ingredient",
+            quantity=1,
+            unit="份",
+            source="manual",
+            confidence=1.0,
+        )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer_type": "missing_for_recipe",
+                                    "subject_name": "红烧肉",
+                                    "required_items": ["猪肉", "老抽", "冰糖"],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 13},
+            },
+        )
+
+    app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
+        provider_id=config.provider_id,
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
+        api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
+        model=config.default_model,
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "做红烧肉还缺什么"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_type"] == "missing_for_recipe"
+    assert body["subject_name"] == "红烧肉"
+    assert body["missing_items"] == []
+    assert [item["name"] for item in body["evidence_items"]] == ["五花肉", "冰糖", "老抽"]
+    assert body["summary"] == "做红烧肉的材料目前齐了。"
+
+
+def test_state_memory_real_have_item_synonym_matches_available_inventory(tmp_path, monkeypatch) -> None:
+    import httpx
+    import json
+
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-provider-test")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    provider_response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "provider_id": "minimax-openai",
+            "display_name": "MiniMax OpenAI Compatible",
+            "provider_type": "openai_compatible",
+            "base_url": "https://api.minimaxi.com/v1",
+            "api_key_env_var": "OPENAI_API_KEY",
+            "default_model": "MiniMax-M3",
+        },
+    )
+    assert provider_response.status_code == 200
+
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="五花肉",
+        category="ingredient",
+        quantity=1,
+        unit="斤",
+        source="manual",
+        confidence=1.0,
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer_type": "have_item",
+                                    "subject_name": "猪肉",
+                                    "required_items": [],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 10},
+            },
+        )
+
+    app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
+        provider_id=config.provider_id,
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
+        api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
+        model=config.default_model,
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "还有猪肉吗"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_type"] == "have_item"
+    assert body["subject_name"] == "猪肉"
+    assert body["has_item"] is True
+    assert body["missing_items"] == []
+    assert [item["name"] for item in body["evidence_items"]] == ["五花肉"]
+    assert body["summary"] == "还有猪肉。"
+
+
 def test_state_memory_real_query_rejects_semantically_empty_recipe_understanding(tmp_path, monkeypatch) -> None:
     import httpx
     import json

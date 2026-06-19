@@ -40,6 +40,15 @@ _RECIPE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "红烧肉": ("五花肉", "生抽", "老抽", "八角", "冰糖"),
 }
 
+_EQUIVALENT_ITEM_NAME_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"番茄", "西红柿"}),
+    frozenset({"土豆", "马铃薯"}),
+)
+
+_GENERIC_ITEM_NAME_EXPANSIONS: dict[str, frozenset[str]] = {
+    "猪肉": frozenset({"猪肉", "五花肉", "瘦肉", "里脊肉", "梅花肉"}),
+}
+
 
 class StateMemoryService:
     def __init__(
@@ -646,8 +655,7 @@ class StateMemoryService:
 
 
 def _build_have_item_answer(*, item_name: str, items: list[StateMemoryItem]) -> StateMemoryQueryAnswer:
-    normalized_target = _normalize_item_name(item_name)
-    matching_items = [item for item in items if item.normalized_name == normalized_target]
+    matching_items = [item for item in items if _item_matches_requested_name(item_name=item_name, candidate_name=item.name)]
     evidence_source = [item for item in matching_items if _item_is_available(item)] or matching_items
     has_item = any(_item_is_available(item) for item in matching_items)
     return StateMemoryQueryAnswer(
@@ -668,14 +676,20 @@ def _build_missing_for_recipe_answer(
     required_items: list[str] | tuple[str, ...],
     items: list[StateMemoryItem],
 ) -> StateMemoryQueryAnswer:
-    required_names = {_normalize_item_name(name) for name in required_items}
     available_items = [
         item
         for item in items
-        if _item_is_available(item) and item.normalized_name in required_names
+        if _item_is_available(item)
+        and any(_item_matches_requested_name(item_name=required_name, candidate_name=item.name) for required_name in required_items)
     ]
-    available_names = {_normalize_item_name(item.name) for item in available_items}
-    missing_items = [name for name in required_items if _normalize_item_name(name) not in available_names]
+    missing_items = [
+        name
+        for name in required_items
+        if not any(
+            _item_is_available(item) and _item_matches_requested_name(item_name=name, candidate_name=item.name)
+            for item in items
+        )
+    ]
     summary = (
         f"做{subject_name}还缺{'、'.join(missing_items)}。"
         if missing_items
@@ -713,6 +727,20 @@ def _item_is_available(item: StateMemoryItem) -> bool:
 
 def _normalize_item_name(name: str) -> str:
     return " ".join(name.strip().lower().split())
+
+
+def _item_matches_requested_name(*, item_name: str, candidate_name: str) -> bool:
+    return _normalize_item_name(candidate_name) in _requested_name_forms(item_name)
+
+
+def _requested_name_forms(item_name: str) -> set[str]:
+    normalized = _normalize_item_name(item_name)
+    forms = {normalized}
+    for group in _EQUIVALENT_ITEM_NAME_GROUPS:
+        if normalized in group:
+            forms.update(group)
+    forms.update(_GENERIC_ITEM_NAME_EXPANSIONS.get(normalized, ()))
+    return forms
 
 
 def _match_recipe_question(question: str) -> tuple[str | None, tuple[str, ...]]:
