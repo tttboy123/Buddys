@@ -7,7 +7,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/buddys
-ExecStart=/opt/buddys/deploy/tencent/run_with_env_compat.sh /etc/buddys/buddys.env /opt/buddys/.venv/bin/python -m uvicorn buddys_api.main:app --host 127.0.0.1 --port 8787
+ExecStart=/opt/buddys/deploy/tencent/run_with_env_compat.sh /etc/buddys/buddys.env /usr/bin/env PYTHONPATH=/opt/buddys/src /opt/buddys/.venv/bin/python -m uvicorn buddys_api.main:create_app --factory --host 127.0.0.1 --port 8787
 Restart=always
 RestartSec=5
 

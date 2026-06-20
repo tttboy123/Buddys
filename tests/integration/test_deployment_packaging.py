@@ -54,6 +54,9 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
     assert "ExecStart=" in service
     assert "run_with_env_compat.sh /etc/buddys/buddys.env" in service
     assert "127.0.0.1:8787" in service
+    assert "PYTHONPATH=/opt/buddys/src" in service
+    assert "buddys_api.main:create_app" in service
+    assert "--factory" in service
 
     assert "listen 80;" in nginx_conf
     assert "proxy_pass http://127.0.0.1:8787;" in nginx_conf
