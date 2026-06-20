@@ -92,7 +92,7 @@ QUERY_UNDERSTANDING_EVAL_CASES: tuple[QueryUnderstandingEvalCase, ...] = (
         "做红烧肉还缺什么",
         "missing_for_recipe",
         ("红烧肉",),
-        required_item_alias_groups=(("五花肉", "猪肉"), ("老抽",), ("冰糖",)),
+        required_item_alias_groups=(("五花肉", "猪肉"), ("老抽", "酱油"), ("冰糖",)),
     ),
     QueryUnderstandingEvalCase(
         "做西红柿炒蛋还缺什么",
