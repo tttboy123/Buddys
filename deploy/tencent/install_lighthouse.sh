@@ -12,7 +12,6 @@ ENV_FILE="${ENV_DIR}/buddys.env"
 SERVICE_SRC="${APP_ROOT}/deploy/tencent/buddys.service"
 NGINX_SRC="${APP_ROOT}/deploy/tencent/nginx-buddys.conf"
 ENV_WRAPPER_SRC="${APP_ROOT}/deploy/tencent/run_with_env_compat.sh"
-SERVER_NAME="$("${APP_ROOT}/deploy/tencent/resolve_public_ipv4.sh")"
 
 echo "Using env file at /etc/buddys/buddys.env"
 
@@ -25,6 +24,8 @@ if [[ ! -d "${APP_ROOT}/src" ]]; then
   echo "Copy the Buddys repository into ${APP_ROOT} before running this script."
   exit 1
 fi
+
+SERVER_NAME="$(bash "${APP_ROOT}/deploy/tencent/resolve_public_ipv4.sh")"
 
 python3 -m venv "${APP_ROOT}/.venv"
 "${APP_ROOT}/.venv/bin/pip" install --upgrade pip

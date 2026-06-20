@@ -50,9 +50,10 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
     assert "systemctl enable buddys" in installer
     assert "run_with_env_compat.sh" in installer
     assert "resolve_public_ipv4.sh" in installer
-    assert 'SERVER_NAME="$("${APP_ROOT}/deploy/tencent/resolve_public_ipv4.sh")"' in installer
+    assert 'SERVER_NAME="$(bash "${APP_ROOT}/deploy/tencent/resolve_public_ipv4.sh")"' in installer
     assert "hostname -I" not in installer
     assert "server_name ${SERVER_NAME};" in installer
+    assert installer.index('if [[ ! -d "${APP_ROOT}/src" ]]') < installer.index('SERVER_NAME="$(bash "${APP_ROOT}/deploy/tencent/resolve_public_ipv4.sh")"')
 
     assert "ExecStart=" in service
     assert "run_with_env_compat.sh /etc/buddys/buddys.env" in service
@@ -108,6 +109,37 @@ def test_tencent_public_ip_helper_prefers_metadata_public_ipv4_over_private_host
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "111.231.3.24"
+
+
+def test_tencent_public_ip_helper_strips_cidr_from_ip_fallback_output(tmp_path) -> None:
+    deploy_root = REPO_ROOT / "deploy" / "tencent"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    env = {"PATH": f"{bin_dir}:{Path('/usr/bin')}:{Path('/bin')}"}
+    (bin_dir / "curl").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    (bin_dir / "hostname").write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '10.0.0.9 172.16.0.5\\n'\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "ip").write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '2: eth0    inet 43.159.52.1/24 brd 43.159.52.255 scope global eth0\\n'\n",
+        encoding="utf-8",
+    )
+    for tool_name in ("curl", "hostname", "ip"):
+        (bin_dir / tool_name).chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(deploy_root / "resolve_public_ipv4.sh")],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "43.159.52.1"
 
 
 def test_tencent_env_wrapper_restores_canonical_env_names_from_orcaterm_file(tmp_path) -> None:

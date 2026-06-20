@@ -21,7 +21,7 @@ is_public_ipv4() {
 first_public_ipv4_from_stream() {
   while IFS= read -r token; do
     for candidate in ${token}; do
-      candidate="${candidate%/}"
+      candidate="${candidate%%/*}"
       if is_public_ipv4 "${candidate}"; then
         printf '%s\n' "${candidate}"
         return 0
