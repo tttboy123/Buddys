@@ -69,6 +69,18 @@ def test_register_requires_matching_invite_code_when_env_is_set(tmp_path, monkey
     assert valid_invite.status_code == 201
 
 
+def test_register_keeps_open_fallback_when_invite_env_is_unset_and_invite_code_is_blank(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BUDDYS_INVITE_CODE", raising=False)
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+
+    response = client.post(
+        "/auth/register",
+        json={"email": "owner@example.com", "password": "correct horse battery staple", "invite_code": ""},
+    )
+
+    assert response.status_code == 201
+
+
 def test_login_rejects_invalid_credentials_without_revealing_which_field_failed(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     client.post("/auth/register", json={"email": "owner@example.com", "password": "correct horse battery staple"})

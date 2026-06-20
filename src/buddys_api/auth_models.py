@@ -50,7 +50,8 @@ class RegisterRequest(BaseModel):
     def invite_code_must_not_be_blank(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _require_stripped(value)
+        stripped = value.strip()
+        return stripped or None
 
 
 class LoginRequest(BaseModel):

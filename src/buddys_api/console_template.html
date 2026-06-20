@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Buddys Console</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main id="experienceShell">
+      <section id="authRail" class="experience-panel" aria-labelledby="authWorkspaceTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Buddys</p>
+            <h1 id="authWorkspaceTitle">My state-memory Buddy</h1>
+          </div>
+          <p id="authStatus" class="support-copy">Signed out. Login to use state memory.</p>
+        </div>
+        <div class="auth-grid">
+          <label class="field">
+            <span>Email</span>
+            <input id="authEmailInput" type="email" placeholder="owner@example.com" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="authPasswordInput" type="password" placeholder="correct horse battery staple" />
+          </label>
+          <label class="field">
+            <span>Display name</span>
+            <input id="authDisplayNameInput" type="text" placeholder="Kitchen owner" />
+          </label>
+          <label class="field">
+            <span>Invite code</span>
+            <input id="authInviteCodeInput" type="text" placeholder="Optional unless invite-only is enabled" />
+          </label>
+          <div class="button-row auth-actions">
+            <button id="authRegisterButton" class="secondary-button" type="button">Register</button>
+            <button id="authLoginButton" class="primary-button" type="button">Login</button>
+            <button id="authLogoutButton" class="ghost-button" type="button" disabled>Logout</button>
+          </div>
+        </div>
+        <div class="workspace-grid">
+          <label class="field">
+            <span>My Buddy</span>
+            <select id="authBuddySelect" disabled>
+              <option value="">No auth buddy</option>
+            </select>
+          </label>
+          <button id="createMyBuddyButton" class="secondary-button" type="button" disabled>Create my Buddy</button>
+        </div>
+      </section>
+
+      <section id="buddyHero" class="experience-panel" aria-labelledby="buddyNameHeading">
+        <p id="buddyGreeting" class="eyebrow">Buddy is here</p>
+        <h2 id="buddyNameHeading">My Buddy</h2>
+        <p id="buddySummaryLine" class="support-copy">
+          Tell Buddy what you bought or used, then ask what is still at home.
+        </p>
+        <div class="hero-meta">
+          <div>
+            <span class="field-label">Space</span>
+            <strong id="overviewTitle">Home Buddy</strong>
+          </div>
+          <div>
+            <span class="field-label">Location</span>
+            <strong id="buddySpace">Home</strong>
+          </div>
+          <div>
+            <span class="field-label">Status</span>
+            <strong id="buddyState">idle</strong>
+          </div>
+        </div>
+      </section>
+
+      <section id="confirmedStatePanel" class="experience-panel" aria-labelledby="confirmedStateTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">What Buddy remembers</p>
+            <h2 id="confirmedStateTitle">Confirmed state</h2>
+          </div>
+          <div class="state-summary">
+            <div>
+              <span class="field-label">Confirmed</span>
+              <strong id="stateMemoryConfirmedCount">0</strong>
+            </div>
+            <div>
+              <span class="field-label">Pending</span>
+              <strong id="stateMemoryPendingCount">0</strong>
+            </div>
+            <div>
+              <span class="field-label">Updated</span>
+              <strong id="stateMemoryLastUpdated">-</strong>
+            </div>
+          </div>
+        </div>
+        <p id="stateMemoryWorkspaceStatus" class="support-copy">
+          Login and select a Buddy before submitting state-memory actions.
+        </p>
+        <ul id="stateMemoryConfirmedList" class="state-list">
+          <li>No confirmed state yet.</li>
+        </ul>
+      </section>
+
+      <section id="captureComposer" class="experience-panel" aria-labelledby="captureComposerTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Capture</p>
+            <h2 id="captureComposerTitle">Tell Buddy what changed</h2>
+          </div>
+        </div>
+        <p class="support-copy">Write, speak, or upload one photo. Buddy will turn it into a reviewable proposal.</p>
+
+        <div class="capture-stack">
+          <section class="composer-band" aria-labelledby="textCaptureTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Text</p>
+                <h3 id="textCaptureTitle">Type a quick update</h3>
+              </div>
+            </div>
+            <textarea
+              id="captureTextInput"
+              rows="4"
+              placeholder="例如：我买了五个鸡蛋和一瓶牛奶"
+              disabled
+            ></textarea>
+            <div class="button-row capture-actions">
+              <button id="captureSubmitButton" class="primary-button" type="button" disabled>Save text update</button>
+            </div>
+          </section>
+
+          <section class="composer-band" aria-labelledby="photoCaptureTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Photo</p>
+                <h3 id="photoCaptureTitle">Upload one pantry photo</h3>
+              </div>
+            </div>
+            <label class="secondary-button file-picker-button" for="photoFileInput">Choose photo</label>
+            <input id="photoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <p id="photoSelectionStatus" class="support-copy">No photo selected.</p>
+            <img id="photoPreviewImage" class="photo-preview" alt="Selected pantry photo preview" hidden />
+            <div class="button-row">
+              <button id="clearPhotoSelectionButton" class="ghost-button" type="button" disabled>Clear photo</button>
+              <button id="submitPhotoCaptureButton" class="primary-button" type="button" disabled>Save photo update</button>
+            </div>
+          </section>
+
+          <section class="composer-band" aria-labelledby="voiceCaptureTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Voice</p>
+                <h3 id="voiceCaptureTitle">Transcribe in browser</h3>
+              </div>
+            </div>
+            <p id="voiceUnsupportedCopy" class="support-copy"></p>
+            <p id="voiceCaptureStatus" class="support-copy">Voice transcript is idle.</p>
+            <textarea
+              id="voiceTranscriptInput"
+              rows="3"
+              placeholder="Voice transcript will appear here."
+              disabled
+            ></textarea>
+            <div class="button-row">
+              <button id="startVoiceCaptureButton" class="secondary-button" type="button" disabled>Start voice capture</button>
+              <button id="retryVoiceCaptureButton" class="ghost-button" type="button" disabled>Retry</button>
+              <button id="submitVoiceTranscriptButton" class="primary-button" type="button" disabled>Save reviewed transcript</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="proposalInbox" class="experience-panel" aria-labelledby="proposalInboxTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Review</p>
+            <h2 id="proposalInboxTitle">Pending proposals</h2>
+          </div>
+        </div>
+        <ul id="stateMemoryPendingList" class="state-list">
+          <li>No pending proposals.</li>
+        </ul>
+        <ul id="proposalReviewList" class="state-list">
+          <li>No proposal selected for review.</li>
+        </ul>
+        <label class="field">
+          <span>Correction JSON</span>
+          <textarea
+            id="proposalCorrectionInput"
+            rows="6"
+            placeholder='[{"name":"鸡蛋","action":"set","quantity":6,"unit":"个","status":"available"}]'
+            disabled
+          ></textarea>
+        </label>
+        <div class="button-row">
+          <button id="submitCorrectionButton" class="secondary-button" type="button" disabled>Apply correction</button>
+        </div>
+      </section>
+
+      <section id="queryComposer" class="experience-panel" aria-labelledby="queryComposerTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Query</p>
+            <h2 id="queryComposerTitle">Ask Buddy</h2>
+          </div>
+        </div>
+        <label class="field">
+          <span>Question</span>
+          <input id="queryTextInput" type="text" placeholder="例如：有鸡蛋吗" disabled />
+        </label>
+        <div class="button-row">
+          <button id="querySubmitButton" class="secondary-button" type="button" disabled>Ask Buddy</button>
+        </div>
+      </section>
+
+      <section id="latestAnswerPanel" class="experience-panel" aria-labelledby="latestAnswerTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Latest answer</p>
+            <h2 id="latestAnswerTitle">Answer and evidence</h2>
+          </div>
+        </div>
+        <p id="stateMemoryQuerySummary">No state-memory query yet.</p>
+        <p id="stateMemoryQueryMeta" class="support-copy">Evidence will appear here once a state-memory query has been asked.</p>
+        <ul id="stateMemoryEvidenceList" class="state-list">
+          <li>No evidence items captured.</li>
+        </ul>
+      </section>
+
+      <section id="proactiveMemoryCard" class="experience-panel" aria-labelledby="proactiveTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Buddy noticed</p>
+            <h2 id="proactiveTitle">Buddy noticed</h2>
+          </div>
+          <button id="dismissProactiveHintButton" class="ghost-button hint-dismiss" type="button">Ignore</button>
+        </div>
+        <p id="proactiveMessage"></p>
+        <p id="proactiveBasis" class="support-copy"></p>
+      </section>
+
+      <details id="detailsDrawer" class="details-drawer">
+        <summary>Why this answer / details</summary>
+        <div class="details-stack">
+          <section id="answerBasisPanel" class="experience-panel detail-panel" aria-labelledby="answerBasisTitle">
+            <p class="eyebrow">Answer basis</p>
+            <h2 id="answerBasisTitle">Why Buddy answered this</h2>
+            <p id="answerBasisQuestion" class="support-copy">No current answer basis.</p>
+            <p id="answerBasisSummary" class="support-copy">Ask Buddy something to inspect evidence details.</p>
+            <ul id="answerBasisEvidenceList" class="state-list">
+              <li>No answer evidence yet.</li>
+            </ul>
+          </section>
+
+          <section class="experience-panel detail-panel" aria-labelledby="traceTitle">
+            <p class="eyebrow">Action Trace</p>
+            <h2 id="traceTitle">Action Trace</h2>
+            <ol id="traceTimeline" class="timeline">
+              <li>Waiting for state-memory activity.</li>
+            </ol>
+          </section>
+
+          <section class="experience-panel detail-panel" aria-labelledby="costTitle">
+            <p class="eyebrow">Cost</p>
+            <h2 id="costTitle">Cost snapshot</h2>
+            <div class="detail-metrics">
+              <div>
+                <span class="field-label">Runtime</span>
+                <strong id="runtimeHealth">runtime checking</strong>
+              </div>
+              <div>
+                <span class="field-label">Tokens</span>
+                <strong id="tokenUsage">0</strong>
+              </div>
+              <div>
+                <span class="field-label">Last run</span>
+                <strong id="modelCost">¥0.00</strong>
+              </div>
+              <div>
+                <span class="field-label">Month</span>
+                <strong id="monthCost">month cost ¥0.00</strong>
+              </div>
+            </div>
+          </section>
+        </div>
+      </details>
+    </main>
+    <script>
+      window.BUDDYS_BOOTSTRAP = __BUDDYS_BOOTSTRAP__;
+    </script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

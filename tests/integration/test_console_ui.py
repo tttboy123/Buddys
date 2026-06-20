@@ -30,6 +30,7 @@ def test_static_assets_are_served() -> None:
 
     css_response = client.get("/static/styles.css")
     js_response = client.get("/static/app.js")
+    raw_index_response = client.get("/static/index.html")
 
     assert css_response.status_code == 200
     assert css_response.headers["content-type"].startswith("text/css")
@@ -37,6 +38,7 @@ def test_static_assets_are_served() -> None:
 
     assert js_response.status_code == 200
     assert "renderExperienceShell" in js_response.text
+    assert raw_index_response.status_code == 404
 
 
 def test_favicon_does_not_create_browser_console_404() -> None:

@@ -33,6 +33,7 @@ from buddys_api.token_plan import TokenPlanLimitExceeded, UsageStore
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+CONSOLE_TEMPLATE = Path(__file__).resolve().parent / "console_template.html"
 
 
 class CreateBuddyRequest(BaseModel):
@@ -105,7 +106,7 @@ def create_app(
     @app.get("/console", response_class=HTMLResponse)
     def console() -> str:
         bootstrap = {"inviteRequired": bool(os.getenv("BUDDYS_INVITE_CODE", "").strip())}
-        return (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+        return CONSOLE_TEMPLATE.read_text(encoding="utf-8").replace(
             "__BUDDYS_BOOTSTRAP__",
             json.dumps(bootstrap),
         )
