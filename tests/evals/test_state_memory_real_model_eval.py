@@ -11,6 +11,9 @@ from buddys_api.providers.openai_compatible_provider import OpenAICompatibleProv
 
 
 RUN_REAL_EVALS = os.getenv("BUDDYS_RUN_REAL_MODEL_EVALS", "").strip() == "1"
+SAMPLE_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlH0QAAAABJRU5ErkJggg=="
+)
 
 
 @dataclass(frozen=True)
@@ -194,6 +197,18 @@ def test_state_memory_real_model_capture_eval_cases(real_provider: OpenAICompati
         assert case.fallback_unrecognized_contains in result.unrecognized
         return
     _assert_alias_groups_present(actual_names, case.expected_item_alias_groups)
+
+
+@pytest.mark.skipif(not RUN_REAL_EVALS, reason="set BUDDYS_RUN_REAL_MODEL_EVALS=1 to run live MiniMax evals")
+def test_state_memory_real_model_photo_capture_eval_case(real_provider: OpenAICompatibleProvider) -> None:
+    result = real_provider.parse_state_memory_capture(
+        source="photo",
+        content="冰箱照片",
+        image_base64=SAMPLE_PNG_BASE64,
+        image_media_type="image/png",
+    )
+
+    assert result.deltas or result.unrecognized
 
 
 @pytest.mark.skipif(not RUN_REAL_EVALS, reason="set BUDDYS_RUN_REAL_MODEL_EVALS=1 to run live MiniMax evals")

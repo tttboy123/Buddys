@@ -1,7 +1,11 @@
 from fastapi.testclient import TestClient
 
 from buddys_api.main import create_app
-from buddys_api.providers.openai_compatible_provider import OpenAICompatibleProvider
+from buddys_api.providers.openai_compatible_provider import (
+    OpenAICompatibleProvider,
+    ProviderUsage,
+    StateMemoryQueryUnderstanding,
+)
 from buddys_api.state_memory_models import StateMemoryDelta
 
 
@@ -290,6 +294,76 @@ def test_state_memory_photo_capture_accepts_image_payload_and_returns_pending_pr
         "image_base64": "aGVsbG8=",
         "image_media_type": "image/png",
     }
+
+
+def test_state_memory_photo_capture_confirm_then_query_returns_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FakePhotoProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="牛奶",
+                        operation="upsert",
+                        quantity=2,
+                        unit="盒",
+                        category="ingredient",
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+        def understand_state_memory_query(self, *, question):
+            return StateMemoryQueryUnderstanding(
+                answer_type="have_item",
+                subject_name="牛奶",
+                usage=ProviderUsage(input_tokens=9, output_tokens=7, estimated=False),
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FakePhotoProvider()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "冰箱照片", "image_base64": "aGVsbG8=", "image_media_type": "image/png"},
+    )
+    assert capture.status_code == 201
+
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有牛奶吗"},
+    )
+
+    assert query.status_code == 200
+    body = query.json()
+    assert body["answer_type"] == "have_item"
+    assert body["has_item"] is True
+    assert body["evidence_items"][0]["name"] == "牛奶"
+    assert body["evidence_items"][0]["source"] == "photo"
 
 
 def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_sync_events(tmp_path) -> None:
