@@ -4,6 +4,7 @@ const UNRECOGNIZED_COPY = "I heard this but could not structure it yet";
 const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
 const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
+const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
 
 const state = {
   auth: {
@@ -177,6 +178,7 @@ function clearSession() {
   localStorage.removeItem(SESSION_STORAGE_KEY);
   $("authPasswordInput").value = "";
   $("authDisplayNameInput").value = "";
+  $("authInviteCodeInput").value = "";
   renderExperienceShell();
 }
 
@@ -207,8 +209,15 @@ function syncAuthControls() {
 
 function renderAuthRail() {
   if (!isAuthenticated()) {
-    setAuthStatus("Signed out. Login to use state memory.");
+    setAuthStatus(
+      BUDDYS_BOOTSTRAP.inviteRequired
+        ? "Signed out. Registration is invite-only right now."
+        : "Signed out. Login to use state memory.",
+    );
   }
+  $("authInviteCodeInput").placeholder = BUDDYS_BOOTSTRAP.inviteRequired
+    ? "Invite code required"
+    : "Optional unless invite-only is enabled";
 
   const select = $("authBuddySelect");
   select.replaceChildren();
@@ -623,6 +632,7 @@ function authPayload() {
     email: $("authEmailInput").value.trim(),
     password: $("authPasswordInput").value,
     display_name: $("authDisplayNameInput").value.trim() || null,
+    invite_code: $("authInviteCodeInput").value.trim() || null,
   };
 }
 
@@ -630,6 +640,10 @@ async function registerAuth() {
   const payload = authPayload();
   if (!payload.email || !payload.password) {
     setAuthStatus("Email and password are required for registration.", "error");
+    return;
+  }
+  if (BUDDYS_BOOTSTRAP.inviteRequired && !payload.invite_code) {
+    setAuthStatus("Invite code is required for registration.", "error");
     return;
   }
   try {
@@ -678,7 +692,11 @@ async function logoutAuth() {
     // Ignore transport errors and clear local state anyway.
   }
   clearSession();
-  setAuthStatus("Signed out. Login to use state memory.");
+  setAuthStatus(
+    BUDDYS_BOOTSTRAP.inviteRequired
+      ? "Signed out. Registration is invite-only right now."
+      : "Signed out. Login to use state memory.",
+  );
   await loadSyncSnapshot();
 }
 

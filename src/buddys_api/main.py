@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Annotated, Literal
@@ -103,7 +104,11 @@ def create_app(
 
     @app.get("/console", response_class=HTMLResponse)
     def console() -> str:
-        return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        bootstrap = {"inviteRequired": bool(os.getenv("BUDDYS_INVITE_CODE", "").strip())}
+        return (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace(
+            "__BUDDYS_BOOTSTRAP__",
+            json.dumps(bootstrap),
+        )
 
     @app.get("/favicon.ico", status_code=204)
     def favicon() -> Response:

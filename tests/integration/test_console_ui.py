@@ -95,6 +95,7 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert 'id="authEmailInput"' in html
     assert 'id="authPasswordInput"' in html
     assert 'id="authDisplayNameInput"' in html
+    assert 'id="authInviteCodeInput"' in html
     assert 'id="authRegisterButton"' in html
     assert 'id="authLoginButton"' in html
     assert 'id="authLogoutButton"' in html
@@ -140,6 +141,8 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "buddysAccessToken" in script
     assert "Authorization" in script
     assert "/auth/register" in script
+    assert "invite_code" in script
+    assert "window.BUDDYS_BOOTSTRAP" in script
     assert "/auth/login" in script
     assert "/auth/me" in script
     assert "/auth/logout" in script
@@ -150,6 +153,15 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "/state-memory/proposals/" in script
     assert "proposalReviewList" in script
     assert "proposalCorrectionInput" in script
+
+
+def test_console_route_bootstraps_invite_required_flag_from_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BUDDYS_INVITE_CODE", "letmein")
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+
+    html = client.get("/console").text
+
+    assert '"inviteRequired": true' in html
 
 
 def test_console_assets_reset_auth_and_workspace_copy_honestly() -> None:

@@ -45,6 +45,30 @@ def test_register_login_me_and_logout_flow_hides_secret_hashes(tmp_path) -> None
     assert after_logout.json() == {"detail": {"code": "invalid_or_expired_token"}}
 
 
+def test_register_requires_matching_invite_code_when_env_is_set(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BUDDYS_INVITE_CODE", "letmein")
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+
+    missing_invite = client.post(
+        "/auth/register",
+        json={"email": "owner@example.com", "password": "correct horse battery staple"},
+    )
+    invalid_invite = client.post(
+        "/auth/register",
+        json={"email": "owner2@example.com", "password": "correct horse battery staple", "invite_code": "wrong"},
+    )
+    valid_invite = client.post(
+        "/auth/register",
+        json={"email": "owner3@example.com", "password": "correct horse battery staple", "invite_code": "letmein"},
+    )
+
+    assert missing_invite.status_code == 403
+    assert missing_invite.json() == {"detail": {"code": "invite_required"}}
+    assert invalid_invite.status_code == 403
+    assert invalid_invite.json() == {"detail": {"code": "invite_invalid"}}
+    assert valid_invite.status_code == 201
+
+
 def test_login_rejects_invalid_credentials_without_revealing_which_field_failed(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     client.post("/auth/register", json={"email": "owner@example.com", "password": "correct horse battery staple"})

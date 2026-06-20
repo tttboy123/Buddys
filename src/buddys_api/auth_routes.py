@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
@@ -22,6 +23,7 @@ class CreateMyBuddyRequest(BaseModel):
 @router.post("/auth/register", response_model=AuthResponse, status_code=201)
 def register(request: RegisterRequest, fastapi_request: Request) -> AuthResponse:
     store = _auth_store(fastapi_request)
+    _require_valid_invite_code(request.invite_code)
     try:
         user = store.register_user(
             email=request.email,
@@ -132,3 +134,13 @@ def _bearer_token(authorization: str | None) -> str:
     if not separator or scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(status_code=401, detail={"code": "missing_bearer_token"})
     return token.strip()
+
+
+def _require_valid_invite_code(invite_code: str | None) -> None:
+    required_code = os.getenv("BUDDYS_INVITE_CODE", "").strip()
+    if not required_code:
+        return
+    if invite_code is None:
+        raise HTTPException(status_code=403, detail={"code": "invite_required"})
+    if invite_code != required_code:
+        raise HTTPException(status_code=403, detail={"code": "invite_invalid"})

@@ -29,6 +29,10 @@
             <span>Display name</span>
             <input id="authDisplayNameInput" type="text" placeholder="Kitchen owner" />
           </label>
+          <label class="field">
+            <span>Invite code</span>
+            <input id="authInviteCodeInput" type="text" placeholder="Optional unless invite-only is enabled" />
+          </label>
           <div class="button-row auth-actions">
             <button id="authRegisterButton" class="secondary-button" type="button">Register</button>
             <button id="authLoginButton" class="primary-button" type="button">Login</button>
@@ -281,6 +285,9 @@
         </div>
       </details>
     </main>
+    <script>
+      window.BUDDYS_BOOTSTRAP = __BUDDYS_BOOTSTRAP__;
+    </script>
     <script src="/static/app.js"></script>
   </body>
 </html>
