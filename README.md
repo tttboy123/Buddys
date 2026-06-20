@@ -31,6 +31,39 @@ PORT=8787 BUDDYS_DEFAULT_OPENAI_API_KEY=test-default-key \
 PYTHONPATH=src .venv/bin/python -m uvicorn buddys_api.main:app --host 0.0.0.0 --port "$PORT"
 ```
 
+## Tencent Lighthouse Deployment
+
+Tencent Lighthouse is the preferred long-running VM target for Buddys invite-only validation.
+
+Files:
+
+- `deploy/tencent/install_lighthouse.sh`
+- `deploy/tencent/buddys.service`
+- `deploy/tencent/nginx-buddys.conf`
+
+Minimum env file contract in `/etc/buddys/buddys.env`:
+
+```bash
+BUDDYS_DEFAULT_OPENAI_API_KEY=replace-with-real-key
+BUDDYS_INVITE_CODE=replace-with-invite-code
+BUDDYS_DEFAULT_MODEL=MiniMax-M3
+```
+
+Expected host shape:
+
+- `systemd` runs `uvicorn` on `127.0.0.1:8787`
+- `nginx` listens on `80` and proxies to the app
+- `/console` remains the primary public surface
+
+Typical first-time install on an Ubuntu Lighthouse instance:
+
+```bash
+cd /opt/buddys
+sudo bash deploy/tencent/install_lighthouse.sh
+```
+
+After the VM is healthy, attach HTTPS through Tencent-managed certificate or another front proxy before broadening access beyond invite-only validation.
+
 ## Device Simulator
 
 Run the local API first, then use the P0 Buddy Body simulator:

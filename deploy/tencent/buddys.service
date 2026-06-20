@@ -1,0 +1,16 @@
+[Unit]
+Description=Buddys Runtime API
+After=network.target
+# Reverse proxy target: 127.0.0.1:8787
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/buddys
+EnvironmentFile=/etc/buddys/buddys.env
+ExecStart=/opt/buddys/.venv/bin/python -m uvicorn buddys_api.main:app --host 127.0.0.1 --port 8787
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
