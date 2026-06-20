@@ -89,12 +89,21 @@ class StateMemoryService:
         buddy_id: str,
         source: StateMemoryCaptureSource,
         content: str,
+        image_base64: str | None = None,
+        image_media_type: str | None = None,
     ) -> tuple[StateMemoryPendingProposal, int]:
         provider = self._provider_for_user(user_id)
-        self._ensure_preflight_capacity(user_id=user_id, provider=provider, text=content)
+        normalized_content = _normalized_capture_content(source=source, content=content)
+        self._ensure_preflight_capacity(user_id=user_id, provider=provider, text=normalized_content)
         space_id, device_id = self._capture_trace_context(user_id=user_id, buddy_id=buddy_id)
         try:
-            deltas, unrecognized, usage = self._parse_capture(provider=provider, source=source, content=content)
+            deltas, unrecognized, usage = self._parse_capture(
+                provider=provider,
+                source=source,
+                content=normalized_content,
+                image_base64=image_base64,
+                image_media_type=image_media_type,
+            )
         except StateMemoryProviderError as exc:
             self._record_provider_failure(
                 user_id=user_id,
@@ -104,7 +113,7 @@ class StateMemoryService:
                 provider=provider,
                 usage=exc.usage,
                 intent_name="state_memory_capture",
-                summary=content,
+                summary=normalized_content,
                 failure_code=exc.code,
             )
             raise
@@ -119,7 +128,7 @@ class StateMemoryService:
                 provider=provider,
                 usage=usage,
                 intent_name="state_memory_capture",
-                summary=content,
+                summary=normalized_content,
                 failure_code="token_plan_limit_exceeded",
             )
             raise
@@ -127,7 +136,7 @@ class StateMemoryService:
             user_id=user_id,
             buddy_id=buddy_id,
             source=source,
-            content=content,
+            content=normalized_content,
             deltas=deltas,
             unrecognized=unrecognized,
         )
@@ -135,7 +144,7 @@ class StateMemoryService:
             user_id=user_id,
             buddy_id=buddy_id,
             proposal=proposal,
-            content=content,
+            content=normalized_content,
             space_id=space_id,
             device_id=device_id,
             provider=provider,
@@ -314,11 +323,18 @@ class StateMemoryService:
         provider: object,
         source: StateMemoryCaptureSource,
         content: str,
+        image_base64: str | None = None,
+        image_media_type: str | None = None,
     ) -> tuple[list[StateMemoryDelta], list[str], ProviderUsage | None]:
         parse_capture = getattr(provider, "parse_state_memory_capture", None)
         if parse_capture is None:
             raise ValueError("state_memory_capture_not_supported")
-        parsed = parse_capture(source=source, content=content)
+        parsed = parse_capture(
+            source=source,
+            content=content,
+            image_base64=image_base64,
+            image_media_type=image_media_type,
+        )
         if isinstance(parsed, ParsedStateMemoryCapture):
             deltas = parsed.deltas
             unrecognized = parsed.unrecognized
@@ -778,6 +794,15 @@ def _extract_have_item_name(question: str) -> str | None:
     if not item_name:
         return None
     return item_name
+
+
+def _normalized_capture_content(*, source: StateMemoryCaptureSource, content: str) -> str:
+    stripped = content.strip()
+    if stripped:
+        return stripped
+    if source == "photo":
+        return "photo capture"
+    return stripped
 
 
 def _system_default_provider_config():

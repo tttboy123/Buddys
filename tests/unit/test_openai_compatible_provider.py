@@ -65,6 +65,67 @@ def test_openai_compatible_provider_parses_capture_and_returns_usage(monkeypatch
     assert requests[0].headers["Authorization"] == "Bearer sk-test-value"
 
 
+def test_openai_compatible_provider_sends_multimodal_photo_capture_payload(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "deltas": [
+                                        {
+                                            "item_name": "牛奶",
+                                            "operation": "upsert",
+                                            "quantity": 2,
+                                            "unit": "盒",
+                                            "category": "ingredient",
+                                            "confidence": 0.9,
+                                            "source": "photo",
+                                        }
+                                    ],
+                                    "unrecognized": [],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 18, "completion_tokens": 12},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        provider_id="minimax-openai",
+        base_url="https://api.minimaxi.com/v1",
+        api_key_env_var="OPENAI_API_KEY",
+        model="MiniMax-M3",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = provider.parse_state_memory_capture(
+        source="photo",
+        content="冰箱照片",
+        image_base64="aGVsbG8=",
+        image_media_type="image/png",
+    )
+    payload = json.loads(requests[0].content.decode("utf-8"))
+
+    assert [delta.item_name for delta in result.deltas] == ["牛奶"]
+    assert payload["messages"][1]["content"][0]["type"] == "text"
+    assert "source=photo" in payload["messages"][1]["content"][0]["text"]
+    assert payload["messages"][1]["content"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,aGVsbG8="},
+    }
+
+
 def test_openai_compatible_provider_understands_recipe_query(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
 

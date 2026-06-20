@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import base64
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from buddys_api.schemas import now_iso
 
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 CaptureContentStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+OptionalCaptureContentStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 StateMemorySource = Literal["voice", "photo", "scan", "conversation", "inference", "manual"]
 StateMemoryCaptureSource = Literal["voice", "photo", "scan", "conversation", "inference"]
 StateMemoryOperation = Literal["upsert", "consume", "remove"]
@@ -76,7 +78,26 @@ class StateMemoryHistoryEntry(BaseModel):
 
 
 class StateMemoryCaptureRequest(BaseModel):
-    content: CaptureContentStr
+    content: OptionalCaptureContentStr | None = None
+    image_base64: str | None = None
+    image_media_type: str | None = None
+
+    @model_validator(mode="after")
+    def validate_image_fields(self) -> "StateMemoryCaptureRequest":
+        if (self.image_base64 is None) != (self.image_media_type is None):
+            raise ValueError("image_payload_incomplete")
+        if self.image_media_type is not None and self.image_media_type not in {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        }:
+            raise ValueError("image_media_type_not_supported")
+        if self.image_base64 is not None:
+            try:
+                base64.b64decode(self.image_base64, validate=True)
+            except Exception as exc:
+                raise ValueError("image_base64_invalid") from exc
+        return self
 
 
 class StateMemoryProposalCorrectionRequest(BaseModel):

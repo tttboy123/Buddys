@@ -80,7 +80,11 @@ class OpenAICompatibleProvider:
         *,
         source: StateMemoryCaptureSource,
         content: str,
+        image_base64: str | None = None,
+        image_media_type: str | None = None,
     ) -> ParsedStateMemoryCapture:
+        if source == "photo" and (image_base64 is None or image_media_type is None):
+            raise ModelResponseError("photo_capture_image_required")
         payload, usage = self._complete_json(
             system_prompt=(
                 "你是状态记忆解析器。只输出 JSON。"
@@ -90,6 +94,8 @@ class OpenAICompatibleProvider:
                 "无法可靠结构化的原文片段必须放进 unrecognized。"
             ),
             user_prompt=f"source={source}\ncontent={content}",
+            image_base64=image_base64,
+            image_media_type=image_media_type,
         )
         try:
             deltas = [
@@ -122,13 +128,26 @@ class OpenAICompatibleProvider:
         except Exception as exc:  # pragma: no cover - exercised by malformed model output tests
             raise ModelResponseError("model_response_invalid", usage=usage) from exc
 
-    def _complete_json(self, *, system_prompt: str, user_prompt: str) -> tuple[dict[str, Any], ProviderUsage]:
+    def _complete_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        image_base64: str | None = None,
+        image_media_type: str | None = None,
+    ) -> tuple[dict[str, Any], ProviderUsage]:
+        user_content: Any = user_prompt
+        if image_base64 is not None and image_media_type is not None:
+            user_content = [
+                {"type": "text", "text": user_prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{image_media_type};base64,{image_base64}"}},
+            ]
         response = self._post_chat_completions(
             {
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_content},
                 ],
                 "response_format": {"type": "json_object"},
             }

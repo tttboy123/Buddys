@@ -113,12 +113,18 @@ def create_state_memory_capture_proposal(
     current_user: Annotated[UserPublic, Depends(require_current_user)],
 ) -> dict[str, object]:
     _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    if source == "photo" and request.image_base64 is None:
+        raise HTTPException(status_code=422, detail={"code": "photo_capture_image_required"})
+    if source != "photo" and not request.content:
+        raise HTTPException(status_code=422, detail={"code": "state_memory_capture_content_required"})
     try:
         proposal, revision = _state_memory_service(fastapi_request).create_capture_proposal(
             user_id=current_user.user_id,
             buddy_id=buddy_id,
             source=source,
-            content=request.content,
+            content=request.content or "",
+            image_base64=request.image_base64,
+            image_media_type=request.image_media_type,
         )
     except TokenPlanLimitExceeded as exc:
         raise HTTPException(

@@ -216,6 +216,82 @@ def test_state_memory_capture_rejects_oversized_content_with_422(tmp_path) -> No
     assert detail[0]["type"] == "string_too_long"
 
 
+def test_state_memory_photo_capture_requires_supported_image_payload(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    missing_image = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "冰箱照片"},
+    )
+    bad_media = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "冰箱照片", "image_base64": "aGVsbG8=", "image_media_type": "application/pdf"},
+    )
+    bad_base64 = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "冰箱照片", "image_base64": "!!!", "image_media_type": "image/png"},
+    )
+
+    assert missing_image.status_code == 422
+    assert bad_media.status_code == 422
+    assert bad_base64.status_code == 422
+
+
+def test_state_memory_photo_capture_accepts_image_payload_and_returns_pending_proposal(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    seen = {}
+
+    class FakePhotoProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            seen["source"] = source
+            seen["content"] = content
+            seen["image_base64"] = image_base64
+            seen["image_media_type"] = image_media_type
+            return ([StateMemoryDelta(item_name="牛奶", operation="upsert", source=source)], [])
+
+    app.state.state_memory_service.provider_factory = lambda config: FakePhotoProvider()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "冰箱照片", "image_base64": "aGVsbG8=", "image_media_type": "image/png"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["proposal"]["source"] == "photo"
+    assert response.json()["proposal"]["deltas"][0]["item_name"] == "牛奶"
+    assert seen == {
+        "source": "photo",
+        "content": "冰箱照片",
+        "image_base64": "aGVsbG8=",
+        "image_media_type": "image/png",
+    }
+
+
 def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_sync_events(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     owner_token = register(client, "owner@example.com")
