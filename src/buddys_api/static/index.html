@@ -104,19 +104,65 @@
             <h2 id="captureComposerTitle">Tell Buddy what changed</h2>
           </div>
         </div>
-        <p class="support-copy">Write what you bought, used, or ran out of. Buddy will turn it into a reviewable proposal.</p>
-        <textarea
-          id="captureTextInput"
-          rows="4"
-          placeholder="例如：我买了五个鸡蛋和一瓶牛奶"
-          disabled
-        ></textarea>
-        <div class="button-row capture-actions">
-          <button id="captureSubmitButton" class="primary-button" type="button" disabled>Save to Buddy</button>
-        </div>
-        <div class="coming-soon-row">
-          <span class="coming-soon-chip">Voice capture coming soon</span>
-          <span class="coming-soon-chip">Photo capture coming soon</span>
+        <p class="support-copy">Write, speak, or upload one photo. Buddy will turn it into a reviewable proposal.</p>
+
+        <div class="capture-stack">
+          <section class="composer-band" aria-labelledby="textCaptureTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Text</p>
+                <h3 id="textCaptureTitle">Type a quick update</h3>
+              </div>
+            </div>
+            <textarea
+              id="captureTextInput"
+              rows="4"
+              placeholder="例如：我买了五个鸡蛋和一瓶牛奶"
+              disabled
+            ></textarea>
+            <div class="button-row capture-actions">
+              <button id="captureSubmitButton" class="primary-button" type="button" disabled>Save text update</button>
+            </div>
+          </section>
+
+          <section class="composer-band" aria-labelledby="photoCaptureTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Photo</p>
+                <h3 id="photoCaptureTitle">Upload one pantry photo</h3>
+              </div>
+            </div>
+            <label class="secondary-button file-picker-button" for="photoFileInput">Choose photo</label>
+            <input id="photoFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+            <p id="photoSelectionStatus" class="support-copy">No photo selected.</p>
+            <img id="photoPreviewImage" class="photo-preview" alt="Selected pantry photo preview" hidden />
+            <div class="button-row">
+              <button id="clearPhotoSelectionButton" class="ghost-button" type="button" disabled>Clear photo</button>
+              <button id="submitPhotoCaptureButton" class="primary-button" type="button" disabled>Save photo update</button>
+            </div>
+          </section>
+
+          <section class="composer-band" aria-labelledby="voiceCaptureTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">Voice</p>
+                <h3 id="voiceCaptureTitle">Transcribe in browser</h3>
+              </div>
+            </div>
+            <p id="voiceUnsupportedCopy" class="support-copy"></p>
+            <p id="voiceCaptureStatus" class="support-copy">Voice transcript is idle.</p>
+            <textarea
+              id="voiceTranscriptInput"
+              rows="3"
+              placeholder="Voice transcript will appear here."
+              disabled
+            ></textarea>
+            <div class="button-row">
+              <button id="startVoiceCaptureButton" class="secondary-button" type="button" disabled>Start voice capture</button>
+              <button id="retryVoiceCaptureButton" class="ghost-button" type="button" disabled>Retry</button>
+              <button id="submitVoiceTranscriptButton" class="primary-button" type="button" disabled>Save voice transcript</button>
+            </div>
+          </section>
         </div>
       </section>
 

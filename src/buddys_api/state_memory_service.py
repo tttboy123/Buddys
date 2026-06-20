@@ -329,12 +329,15 @@ class StateMemoryService:
         parse_capture = getattr(provider, "parse_state_memory_capture", None)
         if parse_capture is None:
             raise ValueError("state_memory_capture_not_supported")
-        parsed = parse_capture(
-            source=source,
-            content=content,
-            image_base64=image_base64,
-            image_media_type=image_media_type,
-        )
+        if image_base64 is not None or image_media_type is not None:
+            parsed = parse_capture(
+                source=source,
+                content=content,
+                image_base64=image_base64,
+                image_media_type=image_media_type,
+            )
+        else:
+            parsed = parse_capture(source=source, content=content)
         if isinstance(parsed, ParsedStateMemoryCapture):
             deltas = parsed.deltas
             unrecognized = parsed.unrecognized

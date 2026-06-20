@@ -197,6 +197,29 @@ li {
   flex: 1 1 140px;
 }
 
+.capture-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.composer-band {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 12px;
+}
+
+.compact-heading {
+  margin-bottom: 0;
+}
+
+.compact-heading h3 {
+  font-size: 16px;
+  line-height: 1.3;
+}
+
 .primary-button {
   border-color: var(--accent-orange);
   background: var(--accent-orange);
@@ -214,6 +237,13 @@ li {
   border-color: var(--border);
   background: transparent;
   color: var(--muted);
+}
+
+.file-picker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .hint-dismiss {
@@ -328,6 +358,15 @@ li {
   background: var(--surface-2);
   font-size: 13px;
   line-height: 1.35;
+}
+
+.photo-preview {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 #latestAnswerPanel #stateMemoryQuerySummary {

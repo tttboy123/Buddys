@@ -1,6 +1,5 @@
 const SESSION_STORAGE_KEY = "buddysAccessToken";
-const VOICE_COMING_SOON = "Voice capture coming soon";
-const PHOTO_COMING_SOON = "Photo capture coming soon";
+const VOICE_UNSUPPORTED_COPY = "Voice capture is not available in this browser.";
 const UNRECOGNIZED_COPY = "I heard this but could not structure it yet";
 const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
@@ -28,6 +27,18 @@ const state = {
     detailsOpen: false,
     dismissedHintKey: null,
     proactiveHint: null,
+    photo: {
+      base64: null,
+      mediaType: null,
+      previewUrl: null,
+      fileName: null,
+    },
+    voice: {
+      transcript: "",
+      status: "idle",
+      supported: false,
+      recording: false,
+    },
   },
 };
 
@@ -161,6 +172,8 @@ function clearSession() {
   state.ui.detailsOpen = false;
   state.ui.dismissedHintKey = null;
   state.ui.proactiveHint = null;
+  state.ui.photo = { base64: null, mediaType: null, previewUrl: null, fileName: null };
+  state.ui.voice = { transcript: "", status: "idle", supported: voiceRecognitionSupported(), recording: false };
   localStorage.removeItem(SESSION_STORAGE_KEY);
   $("authPasswordInput").value = "";
   $("authDisplayNameInput").value = "";
@@ -170,6 +183,8 @@ function clearSession() {
 function syncAuthControls() {
   const signedIn = isAuthenticated();
   const hasBuddy = Boolean(state.workspace.buddyId);
+  const hasPhoto = Boolean(state.ui.photo.base64);
+  const hasVoiceTranscript = Boolean(state.ui.voice.transcript.trim());
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
@@ -177,6 +192,13 @@ function syncAuthControls() {
   $("createMyBuddyButton").disabled = !signedIn || hasBuddy;
   $("captureTextInput").disabled = !hasBuddy;
   $("captureSubmitButton").disabled = !hasBuddy;
+  $("photoFileInput").disabled = !hasBuddy;
+  $("clearPhotoSelectionButton").disabled = !hasBuddy || !hasPhoto;
+  $("submitPhotoCaptureButton").disabled = !hasBuddy || !hasPhoto;
+  $("voiceTranscriptInput").disabled = !hasBuddy;
+  $("startVoiceCaptureButton").disabled = !hasBuddy || !state.ui.voice.supported || state.ui.voice.recording;
+  $("retryVoiceCaptureButton").disabled = !hasBuddy || state.ui.voice.recording;
+  $("submitVoiceTranscriptButton").disabled = !hasBuddy || !hasVoiceTranscript;
   $("queryTextInput").disabled = !hasBuddy;
   $("querySubmitButton").disabled = !hasBuddy;
   $("proposalCorrectionInput").disabled = !hasBuddy || !selectedProposal();
@@ -253,6 +275,115 @@ function renderConfirmedState() {
 
 function renderCaptureComposer() {
   $("captureTextInput").placeholder = "例如：我买了五个鸡蛋和一瓶牛奶";
+  $("voiceUnsupportedCopy").textContent = state.ui.voice.supported ? "" : VOICE_UNSUPPORTED_COPY;
+  $("voiceCaptureStatus").textContent = voiceStatusCopy();
+  $("voiceTranscriptInput").value = state.ui.voice.transcript;
+  $("photoSelectionStatus").textContent = state.ui.photo.fileName
+    ? `Selected photo: ${state.ui.photo.fileName}`
+    : "No photo selected.";
+  $("photoPreviewImage").hidden = !state.ui.photo.previewUrl;
+  if (state.ui.photo.previewUrl) {
+    $("photoPreviewImage").src = state.ui.photo.previewUrl;
+  } else {
+    $("photoPreviewImage").removeAttribute("src");
+  }
+  syncAuthControls();
+}
+
+function voiceRecognitionSupported() {
+  return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function voiceStatusCopy() {
+  if (state.ui.voice.recording) {
+    return "Listening for one short pantry update...";
+  }
+  if (state.ui.voice.status === "captured") {
+    return "Voice transcript ready for review.";
+  }
+  if (state.ui.voice.status === "error") {
+    return "Voice capture failed. Retry or type the transcript manually.";
+  }
+  return "Voice transcript is idle.";
+}
+
+function clearPhotoSelection() {
+  state.ui.photo = { base64: null, mediaType: null, previewUrl: null, fileName: null };
+  $("photoFileInput").value = "";
+  renderCaptureComposer();
+}
+
+function handlePhotoSelected(event) {
+  const file = event.target.files?.[0];
+  if (!file) {
+    clearPhotoSelection();
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || "");
+    const [, mediaType = "", base64 = ""] = result.match(/^data:(.*?);base64,(.*)$/) || [];
+    state.ui.photo = {
+      base64,
+      mediaType,
+      previewUrl: result,
+      fileName: file.name,
+    };
+    renderCaptureComposer();
+  };
+  reader.onerror = () => {
+    clearPhotoSelection();
+    setWorkspaceStatus("Photo preview failed. Choose another image.");
+  };
+  reader.readAsDataURL(file);
+}
+
+function startVoiceCapture() {
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) {
+    state.ui.voice.supported = false;
+    state.ui.voice.status = "error";
+    renderCaptureComposer();
+    return;
+  }
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = "zh-CN";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  state.ui.voice.supported = true;
+  state.ui.voice.recording = true;
+  state.ui.voice.status = "recording";
+  renderCaptureComposer();
+  recognition.onresult = (event) => {
+    const transcript = Array.from(event.results || [])
+      .flatMap((result) => Array.from(result))
+      .map((item) => item.transcript || "")
+      .join("")
+      .trim();
+    state.ui.voice.transcript = transcript;
+    state.ui.voice.recording = false;
+    state.ui.voice.status = transcript ? "captured" : "idle";
+    renderCaptureComposer();
+  };
+  recognition.onerror = () => {
+    state.ui.voice.recording = false;
+    state.ui.voice.status = "error";
+    renderCaptureComposer();
+  };
+  recognition.onend = () => {
+    state.ui.voice.recording = false;
+    renderCaptureComposer();
+  };
+  recognition.start();
+}
+
+function retryVoiceCapture() {
+  state.ui.voice.transcript = "";
+  state.ui.voice.status = "idle";
+  renderCaptureComposer();
+  if (state.ui.voice.supported) {
+    startVoiceCapture();
+  }
 }
 
 function renderUnrecognizedList(parent, proposal) {
@@ -667,6 +798,56 @@ async function submitCapture() {
   }
 }
 
+async function submitPhotoCapture() {
+  if (!state.workspace.buddyId || !state.ui.photo.base64 || !state.ui.photo.mediaType) {
+    setWorkspaceStatus("Choose one photo before saving a photo update.");
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/captures/photo`, {
+      method: "POST",
+      body: JSON.stringify({
+        content: $("captureTextInput").value.trim() || null,
+        image_base64: state.ui.photo.base64,
+        image_media_type: state.ui.photo.mediaType,
+      }),
+    });
+    clearPhotoSelection();
+    state.ui.selectedProposalId = response.proposal.proposal_id;
+    $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
+    setWorkspaceStatus(`Photo saved as pending proposal: ${response.proposal.content}`);
+    await loadSyncSnapshot();
+  } catch (error) {
+    setWorkspaceStatus(`Photo capture failed: ${error.message}`);
+  }
+}
+
+async function submitVoiceTranscript() {
+  if (!state.workspace.buddyId) {
+    setWorkspaceStatus("Create or select a Buddy before saving a voice transcript.");
+    return;
+  }
+  const transcript = $("voiceTranscriptInput").value.trim();
+  if (!transcript) {
+    setWorkspaceStatus("Voice transcript is empty.");
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/captures/voice`, {
+      method: "POST",
+      body: JSON.stringify({ content: transcript }),
+    });
+    state.ui.voice.transcript = "";
+    state.ui.voice.status = "idle";
+    state.ui.selectedProposalId = response.proposal.proposal_id;
+    $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
+    setWorkspaceStatus(`Voice transcript saved as pending proposal: ${response.proposal.content}`);
+    await loadSyncSnapshot();
+  } catch (error) {
+    setWorkspaceStatus(`Voice capture failed: ${error.message}`);
+  }
+}
+
 async function submitQuery() {
   if (!state.workspace.buddyId) {
     setWorkspaceStatus("Create or select a Buddy before querying state memory.");
@@ -752,6 +933,7 @@ async function submitCorrection() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  state.ui.voice.supported = voiceRecognitionSupported();
   $("authRegisterButton").addEventListener("click", registerAuth);
   $("authLoginButton").addEventListener("click", loginAuth);
   $("authLogoutButton").addEventListener("click", logoutAuth);
@@ -761,6 +943,19 @@ document.addEventListener("DOMContentLoaded", () => {
     loadSyncSnapshot().catch((error) => setWorkspaceStatus(`Buddy switch failed: ${error.message}`));
   });
   $("captureSubmitButton").addEventListener("click", submitCapture);
+  $("photoFileInput").addEventListener("change", handlePhotoSelected);
+  $("clearPhotoSelectionButton").addEventListener("click", clearPhotoSelection);
+  $("submitPhotoCaptureButton").addEventListener("click", submitPhotoCapture);
+  $("startVoiceCaptureButton").addEventListener("click", startVoiceCapture);
+  $("retryVoiceCaptureButton").addEventListener("click", retryVoiceCapture);
+  $("submitVoiceTranscriptButton").addEventListener("click", submitVoiceTranscript);
+  $("voiceTranscriptInput").addEventListener("input", () => {
+    state.ui.voice.transcript = $("voiceTranscriptInput").value;
+    if (state.ui.voice.transcript.trim()) {
+      state.ui.voice.status = "captured";
+    }
+    renderCaptureComposer();
+  });
   $("querySubmitButton").addEventListener("click", submitQuery);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
   $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);

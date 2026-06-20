@@ -70,17 +70,20 @@ def test_console_html_exposes_single_primary_state_memory_workspace() -> None:
     assert "Create demo Buddy" not in html
 
 
-def test_console_html_labels_voice_and_photo_as_coming_soon_not_live_controls() -> None:
+def test_console_html_exposes_real_photo_input_and_honest_voice_surface() -> None:
     client = make_client()
 
     html = client.get("/console").text
 
-    assert "Voice capture coming soon" in html
-    assert "Photo capture coming soon" in html
     assert 'id="captureTextInput"' in html
     assert 'id="captureSubmitButton"' in html
-    assert 'id="captureVoiceButton"' not in html
-    assert 'id="capturePhotoButton"' not in html
+    assert 'id="photoFileInput"' in html
+    assert 'id="photoPreviewImage"' in html
+    assert 'id="submitPhotoCaptureButton"' in html
+    assert 'id="startVoiceCaptureButton"' in html
+    assert 'id="voiceTranscriptInput"' in html
+    assert 'id="submitVoiceTranscriptButton"' in html
+    assert "Photo capture coming soon" not in html
 
 
 def test_console_html_contains_auth_workspace_and_state_memory_controls() -> None:
@@ -122,6 +125,10 @@ def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> 
     assert "createBuddyButton" not in script
     assert "captureSourceSelect" not in script
     assert "captureContentInput" not in script
+    assert "startVoiceCapture" in script
+    assert "handlePhotoSelected" in script
+    assert "submitPhotoCapture" in script
+    assert "submitVoiceTranscript" in script
 
 
 def test_console_assets_support_session_aware_auth_and_state_memory_client_flow() -> None:
@@ -151,8 +158,9 @@ def test_console_assets_reset_auth_and_workspace_copy_honestly() -> None:
     script = client.get("/static/app.js").text
     clear_session_body = extract_function_body(script, "clearSession")
 
-    assert "Voice capture coming soon" in script
-    assert "Photo capture coming soon" in script
+    assert "SpeechRecognition" in script
+    assert "webkitSpeechRecognition" in script
+    assert "Voice capture is not available in this browser." in script
     assert "I heard this but could not structure it yet" in script
     assert "No confirmed state yet." in script
     assert "No state-memory query yet." in script
