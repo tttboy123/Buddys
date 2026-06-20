@@ -97,7 +97,10 @@ class MockProvider:
         *,
         source: StateMemoryCaptureSource,
         content: str,
+        image_base64: str | None = None,
+        image_media_type: str | None = None,
     ) -> tuple[list[StateMemoryDelta], list[str]]:
+        del image_base64, image_media_type
         deltas: list[StateMemoryDelta] = []
         unrecognized: list[str] = []
         for raw_segment in re.split(r"[，,；;和]\s*", content):

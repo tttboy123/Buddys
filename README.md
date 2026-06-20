@@ -15,6 +15,22 @@ Local P0 runtime for the first Buddys demo loop.
 PYTHONPATH=src .venv/bin/python -m uvicorn buddys_api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
+## Hosted Validation Deployment
+
+Use `/console` as the primary public surface for validation deployments.
+
+- Bind the runtime to `0.0.0.0:$PORT`.
+- Set `BUDDYS_DEFAULT_OPENAI_API_KEY` so zero-config users can reach the system-managed MiniMax provider.
+- Keep validation deployments invite-only while auth, state-memory, and multimodal capture are still under active iteration.
+- Keep user-configured providers on `OPENAI_API_KEY`; the system-managed default provider stays internal and does not appear in `/providers`.
+
+Example hosted-style local boot:
+
+```bash
+PORT=8787 BUDDYS_DEFAULT_OPENAI_API_KEY=test-default-key \
+PYTHONPATH=src .venv/bin/python -m uvicorn buddys_api.main:app --host 0.0.0.0 --port "$PORT"
+```
+
 ## Device Simulator
 
 Run the local API first, then use the P0 Buddy Body simulator:

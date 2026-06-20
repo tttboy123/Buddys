@@ -8,6 +8,12 @@ from buddys_api.providers.openai_compatible_provider import (
 )
 from buddys_api.state_memory_models import StateMemoryDelta
 
+SAMPLE_PHOTO_CAPTURE_PAYLOAD = {
+    "content": "冰箱照片",
+    "image_base64": "aGVsbG8=",
+    "image_media_type": "image/png",
+}
+
 
 def test_state_memory_api_requires_auth_and_scopes_reads_to_buddy_owner(tmp_path) -> None:
     app = create_app(db_path=tmp_path / "buddys.sqlite3")
@@ -169,10 +175,13 @@ def test_state_memory_capture_proposals_cover_all_supported_sources_without_sile
     ]
 
     for source, content, expected_names, *rest in captures:
+        payload = {"content": content}
+        if source == "photo":
+            payload = {**SAMPLE_PHOTO_CAPTURE_PAYLOAD, "content": content}
         response = client.post(
             f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/{source}",
             headers={"Authorization": f"Bearer {token}"},
-            json={"content": content},
+            json=payload,
         )
         body = response.json()
         assert response.status_code == 201
@@ -401,7 +410,7 @@ def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_
     correct_capture = client.post(
         f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
         headers={"Authorization": f"Bearer {owner_token}"},
-        json={"content": "照片里有两盒牛奶"},
+        json={**SAMPLE_PHOTO_CAPTURE_PAYLOAD, "content": "照片里有两盒牛奶"},
     )
     correct_proposal_id = correct_capture.json()["proposal"]["proposal_id"]
     correct = client.post(
@@ -539,7 +548,7 @@ def test_state_memory_correct_rejects_negative_quantity_with_422(tmp_path) -> No
     capture = client.post(
         f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
         headers={"Authorization": f"Bearer {token}"},
-        json={"content": "照片里有两盒牛奶"},
+        json={**SAMPLE_PHOTO_CAPTURE_PAYLOAD, "content": "照片里有两盒牛奶"},
     )
     proposal_id = capture.json()["proposal"]["proposal_id"]
 
@@ -577,7 +586,7 @@ def test_state_memory_duplicate_correct_returns_409_without_double_apply(tmp_pat
     capture = client.post(
         f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
         headers={"Authorization": f"Bearer {token}"},
-        json={"content": "照片里有两盒牛奶"},
+        json={**SAMPLE_PHOTO_CAPTURE_PAYLOAD, "content": "照片里有两盒牛奶"},
     )
     proposal_id = capture.json()["proposal"]["proposal_id"]
 
