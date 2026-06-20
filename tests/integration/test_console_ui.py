@@ -136,6 +136,7 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     client = make_client()
 
     script = client.get("/static/app.js").text
+    request_json_body = extract_function_body(script, "requestJson")
 
     assert "localStorage" in script
     assert "buddysAccessToken" in script
@@ -153,6 +154,7 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "/state-memory/proposals/" in script
     assert "proposalReviewList" in script
     assert "proposalCorrectionInput" in script
+    assert "detailCode || payload?.detail" in request_json_body
 
 
 def test_console_route_bootstraps_invite_required_flag_from_env(tmp_path, monkeypatch) -> None:

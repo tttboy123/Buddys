@@ -70,7 +70,7 @@ async function requestJson(url, options = {}) {
   const payload = text ? safeJson(text) : null;
   if (!response.ok) {
     const detailCode = payload?.detail?.code;
-    const detailText = payload?.detail?.message || payload?.detail || detailCode;
+    const detailText = payload?.detail?.message || detailCode || payload?.detail;
     const error = new Error(detailText || `${response.status} ${url}`);
     error.status = response.status;
     error.payload = payload;
