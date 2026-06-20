@@ -12,6 +12,7 @@ ENV_FILE="${ENV_DIR}/buddys.env"
 SERVICE_SRC="${APP_ROOT}/deploy/tencent/buddys.service"
 NGINX_SRC="${APP_ROOT}/deploy/tencent/nginx-buddys.conf"
 ENV_WRAPPER_SRC="${APP_ROOT}/deploy/tencent/run_with_env_compat.sh"
+SERVER_IP="$(hostname -I | awk '{print $1}')"
 
 echo "Using env file at /etc/buddys/buddys.env"
 
@@ -40,7 +41,7 @@ fi
 
 cp "${SERVICE_SRC}" /etc/systemd/system/buddys.service
 chmod +x "${ENV_WRAPPER_SRC}"
-cp "${NGINX_SRC}" /etc/nginx/sites-available/buddys.conf
+sed "s/server_name _;/server_name ${SERVER_IP};/" "${NGINX_SRC}" > /etc/nginx/sites-available/buddys.conf
 ln -sf /etc/nginx/sites-available/buddys.conf /etc/nginx/sites-enabled/buddys.conf
 rm -f /etc/nginx/sites-enabled/default
 

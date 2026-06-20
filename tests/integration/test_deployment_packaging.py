@@ -48,6 +48,8 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
     assert "/etc/buddys/buddys.env" in installer
     assert "systemctl enable buddys" in installer
     assert "run_with_env_compat.sh" in installer
+    assert "hostname -I" in installer
+    assert "server_name ${SERVER_IP};" in installer
 
     assert "ExecStart=" in service
     assert "run_with_env_compat.sh /etc/buddys/buddys.env" in service
