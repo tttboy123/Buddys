@@ -94,7 +94,12 @@ class StateMemoryService:
     ) -> tuple[StateMemoryPendingProposal, int]:
         provider = self._provider_for_user(user_id)
         normalized_content = _normalized_capture_content(source=source, content=content)
-        self._ensure_preflight_capacity(user_id=user_id, provider=provider, text=normalized_content)
+        self._ensure_preflight_capacity(
+            user_id=user_id,
+            provider=provider,
+            text=normalized_content,
+            image_base64=image_base64,
+        )
         space_id, device_id = self._capture_trace_context(user_id=user_id, buddy_id=buddy_id)
         try:
             deltas, unrecognized, usage = self._parse_capture(
@@ -479,12 +484,23 @@ class StateMemoryService:
             model=config.default_model,
         )
 
-    def _ensure_preflight_capacity(self, *, user_id: str, provider: object, text: str) -> None:
+    def _ensure_preflight_capacity(
+        self,
+        *,
+        user_id: str,
+        provider: object,
+        text: str,
+        image_base64: str | None = None,
+    ) -> None:
         if self.usage_store is None:
             return
         if not getattr(provider, "requires_preflight_hard_limit", False):
             return
-        attempted_tokens = max(len(text.strip()), 1) + max(getattr(provider, "preflight_token_reserve", 0), 0)
+        attempted_tokens = (
+            max(len(text.strip()), 1)
+            + max(getattr(provider, "preflight_token_reserve", 0), 0)
+            + _estimated_image_preflight_tokens(image_base64)
+        )
         self.usage_store.ensure_within_hard_limit(user_id=user_id, attempted_tokens=attempted_tokens)
 
     def _ensure_actual_capture_capacity(self, *, user_id: str, usage: ProviderUsage | None) -> None:
@@ -806,6 +822,15 @@ def _normalized_capture_content(*, source: StateMemoryCaptureSource, content: st
     if source == "photo":
         return "photo capture"
     return stripped
+
+
+def _estimated_image_preflight_tokens(image_base64: str | None) -> int:
+    if not image_base64:
+        return 0
+    # MiniMax image token usage varies with asset size and content. For preflight we
+    # conservatively reserve against the uploaded payload itself so near-limit users
+    # are blocked before a real vision request leaves the process.
+    return max((len(image_base64.strip()) + 3) // 4, 1)
 
 
 def _system_default_provider_config():

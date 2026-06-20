@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
 import os
+import struct
+import zlib
 from dataclasses import dataclass
 
 import pytest
@@ -11,9 +14,6 @@ from buddys_api.providers.openai_compatible_provider import OpenAICompatibleProv
 
 
 RUN_REAL_EVALS = os.getenv("BUDDYS_RUN_REAL_MODEL_EVALS", "").strip() == "1"
-SAMPLE_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlH0QAAAABJRU5ErkJggg=="
-)
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,35 @@ class ServiceQueryEvalCase:
     expected_evidence_alias_groups: tuple[tuple[str, ...], ...] = ()
     forbidden_missing_alias_groups: tuple[tuple[str, ...], ...] = ()
     expected_missing_alias_groups: tuple[tuple[str, ...], ...] = ()
+
+
+def _sample_eval_png_base64() -> str:
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack("!I", len(data))
+            + tag
+            + data
+            + struct.pack("!I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    width = 64
+    height = 64
+    rows: list[bytes] = []
+    for y in range(height):
+        row = bytearray([0])
+        for x in range(width):
+            row.extend(((x * 4) % 256, (y * 4) % 256, 128))
+        rows.append(bytes(row))
+    image = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack("!IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
+        + chunk(b"IEND", b"")
+    )
+    return base64.b64encode(image).decode("ascii")
+
+
+SAMPLE_PNG_BASE64 = _sample_eval_png_base64()
 
 
 CAPTURE_EVAL_CASES: tuple[CaptureEvalCase, ...] = (
@@ -208,7 +237,8 @@ def test_state_memory_real_model_photo_capture_eval_case(real_provider: OpenAICo
         image_media_type="image/png",
     )
 
-    assert result.deltas or result.unrecognized
+    assert result.usage.input_tokens > 0
+    assert result.usage.output_tokens > 0
 
 
 @pytest.mark.skipif(not RUN_REAL_EVALS, reason="set BUDDYS_RUN_REAL_MODEL_EVALS=1 to run live MiniMax evals")

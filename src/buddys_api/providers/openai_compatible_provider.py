@@ -98,9 +98,10 @@ class OpenAICompatibleProvider:
             image_media_type=image_media_type,
         )
         try:
+            normalized_deltas = [_normalize_capture_delta_payload(delta) for delta in payload.get("deltas", [])]
             deltas = [
                 StateMemoryDelta.model_validate({**delta, "source": source})
-                for delta in payload.get("deltas", [])
+                for delta in normalized_deltas
             ]
         except Exception as exc:  # pragma: no cover - exercised by malformed model output tests
             raise ModelResponseError("model_response_invalid", usage=usage) from exc
@@ -140,7 +141,13 @@ class OpenAICompatibleProvider:
         if image_base64 is not None and image_media_type is not None:
             user_content = [
                 {"type": "text", "text": user_prompt},
-                {"type": "image_url", "image_url": {"url": f"data:{image_media_type};base64,{image_base64}"}},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{image_media_type};base64,{image_base64}",
+                        "detail": "default",
+                    },
+                },
             ]
         response = self._post_chat_completions(
             {
@@ -293,4 +300,13 @@ def _normalize_query_understanding_payload(payload: dict[str, Any]) -> dict[str,
             if isinstance(value, list):
                 normalized["required_items"] = value
                 break
+    if normalized.get("required_items") is None:
+        normalized["required_items"] = []
+    return normalized
+
+
+def _normalize_capture_delta_payload(delta: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(delta)
+    if normalized.get("unit") == "":
+        normalized["unit"] = None
     return normalized

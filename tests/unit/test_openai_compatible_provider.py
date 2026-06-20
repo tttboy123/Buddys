@@ -122,7 +122,7 @@ def test_openai_compatible_provider_sends_multimodal_photo_capture_payload(monke
     assert "source=photo" in payload["messages"][1]["content"][0]["text"]
     assert payload["messages"][1]["content"][1] == {
         "type": "image_url",
-        "image_url": {"url": "data:image/png;base64,aGVsbG8="},
+        "image_url": {"url": "data:image/png;base64,aGVsbG8=", "detail": "default"},
     }
 
 
@@ -290,6 +290,91 @@ def test_openai_compatible_provider_overrides_model_generated_capture_source(mon
     result = provider.parse_state_memory_capture(source="voice", content="两盒鸡蛋和一斤五花肉")
 
     assert [delta.source for delta in result.deltas] == ["voice"]
+
+
+def test_openai_compatible_provider_normalizes_empty_unit_to_none(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "deltas": [
+                                        {
+                                            "item_name": "鸡蛋",
+                                            "operation": "upsert",
+                                            "quantity": 2,
+                                            "unit": "",
+                                            "category": "ingredient",
+                                            "confidence": 0.93,
+                                            "source": "voice",
+                                        }
+                                    ],
+                                    "unrecognized": [],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 18},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        provider_id="minimax-openai",
+        base_url="https://api.minimaxi.com/v1",
+        api_key_env_var="OPENAI_API_KEY",
+        model="MiniMax-M3",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = provider.parse_state_memory_capture(source="voice", content="我买了两盒鸡蛋")
+
+    assert result.deltas[0].unit is None
+
+
+def test_openai_compatible_provider_normalizes_null_required_items_to_empty_list(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer_type": "have_item",
+                                    "subject_name": "鸡蛋",
+                                    "required_items": None,
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 9, "completion_tokens": 11},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        provider_id="minimax-openai",
+        base_url="https://api.minimaxi.com/v1",
+        api_key_env_var="OPENAI_API_KEY",
+        model="MiniMax-M3",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = provider.understand_state_memory_query(question="家里还有鸡蛋吗")
+
+    assert result.required_items == []
 
 
 def test_openai_compatible_provider_raises_typed_error_for_malformed_json(monkeypatch) -> None:

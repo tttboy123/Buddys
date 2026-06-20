@@ -824,7 +824,7 @@ async function submitPhotoCapture() {
 
 async function submitVoiceTranscript() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before saving a voice transcript.");
+    setWorkspaceStatus("Create or select a Buddy before saving a reviewed transcript note.");
     return;
   }
   const transcript = $("voiceTranscriptInput").value.trim();
@@ -833,7 +833,7 @@ async function submitVoiceTranscript() {
     return;
   }
   try {
-    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/captures/voice`, {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/captures/conversation`, {
       method: "POST",
       body: JSON.stringify({ content: transcript }),
     });
@@ -841,10 +841,10 @@ async function submitVoiceTranscript() {
     state.ui.voice.status = "idle";
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
-    setWorkspaceStatus(`Voice transcript saved as pending proposal: ${response.proposal.content}`);
+    setWorkspaceStatus(`Reviewed transcript saved as pending note: ${response.proposal.content}`);
     await loadSyncSnapshot();
   } catch (error) {
-    setWorkspaceStatus(`Voice capture failed: ${error.message}`);
+    setWorkspaceStatus(`Transcript save failed: ${error.message}`);
   }
 }
 

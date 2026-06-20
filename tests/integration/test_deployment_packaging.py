@@ -22,3 +22,4 @@ def test_render_yaml_packages_single_python_web_service_for_console() -> None:
     assert "uvicorn" in render_yaml
     assert "$PORT" in render_yaml
     assert "BUDDYS_DEFAULT_MODEL" in render_yaml
+    assert "BUDDYS_DEFAULT_OPENAI_API_KEY" in render_yaml

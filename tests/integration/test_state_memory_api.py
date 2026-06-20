@@ -1974,6 +1974,81 @@ def test_state_memory_real_capture_preflight_blocks_near_limit_before_provider_c
     assert pending.json() == {"pending_proposals": []}
 
 
+def test_state_memory_real_photo_capture_preflight_blocks_near_limit_before_provider_call(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import base64
+    import httpx
+
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-provider-test")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    provider_response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "provider_id": "minimax-openai",
+            "display_name": "MiniMax OpenAI Compatible",
+            "provider_type": "openai_compatible",
+            "base_url": "https://api.minimaxi.com/v1",
+            "api_key_env_var": "OPENAI_API_KEY",
+            "default_model": "MiniMax-M3",
+        },
+    )
+    assert provider_response.status_code == 200
+    call_count = {"value": 0}
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        call_count["value"] += 1
+        return httpx.Response(500, json={"error": "should-not-be-called"})
+
+    app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
+        provider_id=config.provider_id,
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
+        api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
+        model=config.default_model,
+        transport=httpx.MockTransport(handler),
+    )
+
+    usage_store = app.state.usage_store
+    limit = usage_store.usage_summary(buddy["user_id"]).monthly_token_limit
+    assert limit is not None
+    usage_store.record_usage(
+        user_id=buddy["user_id"],
+        trace_id="trace_near_photo_limit",
+        buddy_id=buddy["buddy_id"],
+        provider_id="seed_provider",
+        model_id="seed_model",
+        input_tokens=limit - 120,
+        output_tokens=0,
+        source="test_seed",
+    )
+    image_base64 = base64.b64encode(b"x" * 512).decode("ascii")
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "content": "冰箱照片",
+            "image_base64": image_base64,
+            "image_media_type": "image/png",
+        },
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"]["code"] == "token_plan_limit_exceeded"
+    assert call_count["value"] == 0
+    assert app.state.usage_store.usage_summary(buddy["user_id"]).used_tokens == limit - 120
+    assert client.get("/cost-events", headers={"Authorization": f"Bearer {token}"}).json() == {"cost_events": []}
+
+
 def test_state_memory_real_capture_post_call_over_limit_returns_429_without_persistence(tmp_path, monkeypatch) -> None:
     import httpx
     import json
