@@ -42,14 +42,17 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
     service = (deploy_root / "buddys.service").read_text(encoding="utf-8")
     nginx_conf = (deploy_root / "nginx-buddys.conf").read_text(encoding="utf-8")
     env_wrapper = (deploy_root / "run_with_env_compat.sh").read_text(encoding="utf-8")
+    public_ip_helper = (deploy_root / "resolve_public_ipv4.sh").read_text(encoding="utf-8")
 
     assert "python3-venv" in installer
     assert "nginx" in installer
     assert "/etc/buddys/buddys.env" in installer
     assert "systemctl enable buddys" in installer
     assert "run_with_env_compat.sh" in installer
-    assert "hostname -I" in installer
-    assert "server_name ${SERVER_IP};" in installer
+    assert "resolve_public_ipv4.sh" in installer
+    assert 'SERVER_NAME="$("${APP_ROOT}/deploy/tencent/resolve_public_ipv4.sh")"' in installer
+    assert "hostname -I" not in installer
+    assert "server_name ${SERVER_NAME};" in installer
 
     assert "ExecStart=" in service
     assert "run_with_env_compat.sh /etc/buddys/buddys.env" in service
@@ -66,6 +69,45 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" in env_wrapper
     assert "BUDDYSINVITECODE" in env_wrapper
     assert "OPENAIAPIKEY" in env_wrapper
+
+    assert "metadata.tencentyun.com/latest/meta-data/public-ipv4" in public_ip_helper
+    assert "metadata.tencentyun.com/meta-data/public-ipv4" in public_ip_helper
+    assert "hostname -I" in public_ip_helper
+
+
+def test_tencent_public_ip_helper_prefers_metadata_public_ipv4_over_private_hostname(tmp_path) -> None:
+    deploy_root = REPO_ROOT / "deploy" / "tencent"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    env = {"PATH": f"{bin_dir}:{Path('/usr/bin')}:{Path('/bin')}"}
+    (bin_dir / "curl").write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$*\" == *\"latest/meta-data/public-ipv4\"* ]]; then\n"
+        "  printf '111.231.3.24\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "hostname").write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '10.0.0.9 172.16.0.5\\n'\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "ip").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    for tool_name in ("curl", "hostname", "ip"):
+        (bin_dir / tool_name).chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(deploy_root / "resolve_public_ipv4.sh")],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "111.231.3.24"
 
 
 def test_tencent_env_wrapper_restores_canonical_env_names_from_orcaterm_file(tmp_path) -> None:
