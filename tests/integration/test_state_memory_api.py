@@ -1547,6 +1547,150 @@ def test_state_memory_real_provider_missing_env_key_fails_instead_of_falling_bac
     ).json() == {"pending_proposals": []}
 
 
+def test_state_memory_zero_config_default_provider_uses_system_managed_env_without_listing_it(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    seen = {}
+
+    class FakeDefaultProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content):
+            seen["source"] = source
+            seen["content"] = content
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="鸡蛋",
+                        operation="upsert",
+                        quantity=5,
+                        unit="个",
+                        category="ingredient",
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+    def provider_factory(config):
+        seen["provider_id"] = config.provider_id
+        seen["api_key_env_var"] = config.api_key_env_var
+        return FakeDefaultProvider()
+
+    app.state.state_memory_service.provider_factory = provider_factory
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了五个鸡蛋"},
+    )
+    providers = client.get("/providers", headers={"Authorization": f"Bearer {token}"}).json()
+
+    assert response.status_code == 201
+    assert response.json()["proposal"]["deltas"][0]["item_name"] == "鸡蛋"
+    assert seen == {
+        "provider_id": "system-minimax-default",
+        "api_key_env_var": "BUDDYS_DEFAULT_OPENAI_API_KEY",
+        "source": "voice",
+        "content": "我买了五个鸡蛋",
+    }
+    assert providers["configs"] == []
+    assert "BUDDYS_DEFAULT_OPENAI_API_KEY" not in str(providers)
+    assert "system-minimax-default" not in str(providers)
+
+
+def test_state_memory_without_default_env_still_falls_back_to_mock_provider(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BUDDYS_DEFAULT_OPENAI_API_KEY", raising=False)
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了五个鸡蛋和一包面粉"},
+    )
+
+    assert response.status_code == 201
+    assert [delta["item_name"] for delta in response.json()["proposal"]["deltas"]] == ["鸡蛋"]
+    assert response.json()["proposal"]["unrecognized"] == ["一包面粉"]
+
+
+def test_state_memory_user_configured_real_provider_wins_over_system_default_provider(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-user-managed")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    provider_response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "provider_id": "user-minimax-openai",
+            "display_name": "MiniMax OpenAI Compatible",
+            "provider_type": "openai_compatible",
+            "base_url": "https://api.minimaxi.com/v1",
+            "api_key_env_var": "OPENAI_API_KEY",
+            "default_model": "MiniMax-M3",
+        },
+    )
+    assert provider_response.status_code == 200
+
+    seen = {}
+
+    class FakeUserProvider:
+        provider = "user-minimax-openai"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content):
+            seen["source"] = source
+            seen["content"] = content
+            return ([StateMemoryDelta(item_name="牛奶", operation="upsert", source=source)], [])
+
+    def provider_factory(config):
+        seen["provider_id"] = config.provider_id
+        seen["api_key_env_var"] = config.api_key_env_var
+        return FakeUserProvider()
+
+    app.state.state_memory_service.provider_factory = provider_factory
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了牛奶"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["proposal"]["deltas"][0]["item_name"] == "牛奶"
+    assert seen["provider_id"] == "user-minimax-openai"
+    assert seen["api_key_env_var"] == "OPENAI_API_KEY"
+
+
 def test_state_memory_multiple_real_provider_configs_fail_fast_instead_of_lexicographic_routing(
     tmp_path,
     monkeypatch,

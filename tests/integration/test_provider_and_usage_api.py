@@ -72,6 +72,20 @@ def test_provider_config_metadata_is_redacted_and_test_is_local_only(tmp_path, m
     assert "private_key" not in serialized.lower()
 
 
+def test_system_managed_default_provider_does_not_appear_in_provider_listing(tmp_path, monkeypatch) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+
+    list_response = client.get("/providers", headers={"Authorization": f"Bearer {token}"})
+
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert payload["configs"] == []
+    assert "BUDDYS_DEFAULT_OPENAI_API_KEY" not in str(payload)
+    assert "system-minimax-default" not in str(payload)
+
+
 def test_provider_config_rejects_raw_key_in_env_var_field_without_echoing_it(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")

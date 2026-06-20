@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import os
 import re
 
 from buddys_api.buddy_store import BuddyStore
 from buddys_api.cost_meter import CostMeter
+from buddys_api.provider_models import (
+    MINIMAX_OPENAI_BASE_URL,
+    SYSTEM_DEFAULT_MODEL_ENV_VAR,
+    SYSTEM_DEFAULT_MODEL_NAME,
+    SYSTEM_DEFAULT_PROVIDER_ENV_VAR,
+    SYSTEM_DEFAULT_PROVIDER_ID,
+)
 from buddys_api.provider_store import ProviderStore
 from buddys_api.providers.openai_compatible_provider import (
     OpenAICompatibleProvider,
@@ -423,9 +431,21 @@ class StateMemoryService:
     def _provider_for_user(self, user_id: str) -> object:
         if self.provider_store is None:
             return self.provider
-        real_configs = [config for config in self.provider_store.list_configs(user_id) if config.provider_type == "openai_compatible"]
+        real_configs = [
+            config for config in self.provider_store.list_configs(user_id) if config.provider_type == "openai_compatible"
+        ]
         if not real_configs:
-            return self.provider
+            default_config = _system_default_provider_config()
+            if default_config is None:
+                return self.provider
+            if callable(self.provider_factory):
+                return self.provider_factory(default_config)
+            return OpenAICompatibleProvider(
+                provider_id=default_config.provider_id,
+                base_url=default_config.base_url or MINIMAX_OPENAI_BASE_URL,
+                api_key_env_var=default_config.api_key_env_var or SYSTEM_DEFAULT_PROVIDER_ENV_VAR,
+                model=default_config.default_model,
+            )
         if len(real_configs) > 1:
             raise ProviderConfigurationError("provider_selection_ambiguous")
         config = real_configs[0]
@@ -435,7 +455,7 @@ class StateMemoryService:
             return self.provider_factory(config)
         return OpenAICompatibleProvider(
             provider_id=config.provider_id,
-            base_url=config.base_url or "https://api.minimaxi.com/v1",
+            base_url=config.base_url or MINIMAX_OPENAI_BASE_URL,
             api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
             model=config.default_model,
         )
@@ -758,3 +778,22 @@ def _extract_have_item_name(question: str) -> str | None:
     if not item_name:
         return None
     return item_name
+
+
+def _system_default_provider_config():
+    from buddys_api.provider_models import ProviderConfigPublic
+
+    api_key = os.getenv(SYSTEM_DEFAULT_PROVIDER_ENV_VAR, "").strip()
+    if not api_key:
+        return None
+    return ProviderConfigPublic(
+        provider_id=SYSTEM_DEFAULT_PROVIDER_ID,
+        display_name="System-managed MiniMax default",
+        provider_type="openai_compatible",
+        base_url=MINIMAX_OPENAI_BASE_URL,
+        api_key_env_var=SYSTEM_DEFAULT_PROVIDER_ENV_VAR,
+        default_model=os.getenv(SYSTEM_DEFAULT_MODEL_ENV_VAR, "").strip() or SYSTEM_DEFAULT_MODEL_NAME,
+        configured=True,
+        created_at="system",
+        updated_at="system",
+    )
