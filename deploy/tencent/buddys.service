@@ -8,7 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/buddys
 EnvironmentFile=/etc/buddys/buddys.env
-ExecStart=/opt/buddys/.venv/bin/python -m uvicorn buddys_api.main:app --host 127.0.0.1 --port 8787
+ExecStart=/bin/bash -lc 'set -a; . /etc/buddys/buddys.env; export BUDDYS_DEFAULT_OPENAI_API_KEY="${BUDDYS_DEFAULT_OPENAI_API_KEY:-${BUDDYSDEFAULTOPENAIAPIKEY:-}}"; export BUDDYS_INVITE_CODE="${BUDDYS_INVITE_CODE:-${BUDDYSINVITECODE:-}}"; export BUDDYS_DEFAULT_MODEL="${BUDDYS_DEFAULT_MODEL:-${BUDDYSDEFAULTMODEL:-MiniMax-M3}}"; exec /opt/buddys/.venv/bin/python -m uvicorn buddys_api.main:app --host 127.0.0.1 --port 8787'
 Restart=always
 RestartSec=5
 
