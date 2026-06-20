@@ -139,6 +139,7 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
 
     script = client.get("/static/app.js").text
     request_json_body = extract_function_body(script, "requestJson")
+    register_auth_body = extract_function_body(script, "registerAuth")
 
     assert "localStorage" in script
     assert "buddysAccessToken" in script
@@ -157,6 +158,9 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "proposalReviewList" in script
     assert "proposalCorrectionInput" in script
     assert "detailCode || payload?.detail" in request_json_body
+    assert 'saveSession(result.access_token, result.user);' in register_auth_body
+    assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in register_auth_body
+    assert "Registered ${result.user.email}" not in register_auth_body
 
 
 def test_console_route_bootstraps_invite_required_flag_from_env(tmp_path, monkeypatch) -> None:

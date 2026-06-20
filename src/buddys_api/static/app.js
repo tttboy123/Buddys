@@ -654,7 +654,7 @@ async function registerAuth() {
     });
     saveSession(result.access_token, result.user);
     $("authPasswordInput").value = "";
-    setAuthStatus(`Registered ${result.user.email}`, "ok");
+    setAuthStatus(`Signed in as ${result.user.email}`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
     setAuthStatus(`Register failed: ${error.message}`, "error");
