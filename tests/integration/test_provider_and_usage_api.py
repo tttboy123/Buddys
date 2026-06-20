@@ -188,7 +188,7 @@ def valid_provider_payload() -> dict[str, str]:
         "provider_id": "minimax-openai",
         "display_name": "MiniMax OpenAI Compatible",
         "provider_type": "openai_compatible",
-        "base_url": "https://api.minimaxi.com/v1",
+        "base_url": "https://api.minimax.io/v1",
         "api_key_env_var": "OPENAI_API_KEY",
         "default_model": "MiniMax-M3",
     }

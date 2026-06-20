@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 ProviderType = Literal["mock", "openai_compatible"]
-MINIMAX_OPENAI_BASE_URL = "https://api.minimaxi.com/v1"
+MINIMAX_OPENAI_BASE_URL = "https://api.minimax.io/v1"
 SYSTEM_DEFAULT_PROVIDER_ID = "system-minimax-default"
 SYSTEM_DEFAULT_PROVIDER_ENV_VAR = "BUDDYS_DEFAULT_OPENAI_API_KEY"
 SYSTEM_DEFAULT_MODEL_ENV_VAR = "BUDDYS_DEFAULT_MODEL"
