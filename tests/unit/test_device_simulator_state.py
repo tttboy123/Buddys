@@ -38,6 +38,24 @@ def test_render_asking_confirmation_includes_proposal_action_text() -> None:
     assert "set brightness to 35%" in screen
 
 
+def test_render_state_memory_summary_includes_confirmed_pantry_and_pending_count() -> None:
+    screen = render_screen(
+        {
+            "state": "idle",
+            "state_memory": {
+                "confirmed_items": [
+                    {"name": "鸡蛋", "quantity": 5, "unit": "个"},
+                    {"name": "牛奶", "quantity": 1, "unit": "盒"},
+                ],
+                "pending_proposal_count": 2,
+            },
+        }
+    )
+
+    assert "pantry: 鸡蛋 5个, 牛奶 1盒" in screen
+    assert "pending: 2 proposal(s)" in screen
+
+
 def test_build_heartbeat_payload_matches_api_contract_without_secret_fields() -> None:
     payload = build_heartbeat_payload(
         firmware_version="0.2.0-sim",

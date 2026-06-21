@@ -50,6 +50,7 @@ def render_screen(desired_state: dict[str, Any]) -> str:
         lines.append(f"manual: {_compact(instruction)}")
     if state == "asking_confirmation" and proposal_text:
         lines.append(f"confirm: {_compact(proposal_text)}")
+    lines.extend(_state_memory_lines(desired_state.get("state_memory")))
     if desired_state.get("source_trace_id"):
         lines.append(f"trace: {desired_state['source_trace_id']}")
     return "\n".join(lines)
@@ -119,6 +120,76 @@ def _first_text(*values: object) -> str | None:
 
 def _compact(value: str) -> str:
     return shorten(value, width=68, placeholder="...")
+
+
+def _state_memory_lines(state_memory: Any) -> list[str]:
+    if not isinstance(state_memory, dict):
+        return []
+
+    lines: list[str] = []
+    pantry = _pantry_summary(state_memory.get("confirmed_items"))
+    if pantry:
+        lines.append(f"pantry: {_compact(pantry)}")
+
+    pending_count = state_memory.get("pending_proposal_count")
+    if isinstance(pending_count, int) and pending_count >= 0:
+        lines.append(f"pending: {pending_count} proposal(s)")
+    return lines
+
+
+def _pantry_summary(items: Any) -> str | None:
+    if not isinstance(items, list):
+        return None
+
+    ordered_items = sorted(items, key=_state_memory_sort_key)
+    labels = [_state_memory_item_label(item) for item in ordered_items]
+    labels = [label for label in labels if label]
+    if not labels:
+        return None
+    return ", ".join(labels)
+
+
+def _state_memory_item_label(item: Any) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    name = item.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    quantity = _format_quantity(item.get("quantity"))
+    unit = item.get("unit")
+    if quantity is None:
+        return name.strip()
+    if isinstance(unit, str) and unit.strip():
+        return f"{name.strip()} {quantity}{unit.strip()}"
+    return f"{name.strip()} {quantity}"
+
+
+def _format_quantity(value: Any) -> str | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return f"{value:g}"
+    return None
+
+
+def _state_memory_sort_key(item: Any) -> tuple[float, str]:
+    if not isinstance(item, dict):
+        return (0.0, "")
+    quantity = item.get("quantity")
+    if isinstance(quantity, bool):
+        numeric_quantity = 0.0
+    elif isinstance(quantity, int | float):
+        numeric_quantity = float(quantity)
+    else:
+        numeric_quantity = 0.0
+    name = item.get("name")
+    if not isinstance(name, str):
+        name = ""
+    return (-numeric_quantity, name)
 
 
 def _reject_denied_payload_keys(value: Any) -> None:

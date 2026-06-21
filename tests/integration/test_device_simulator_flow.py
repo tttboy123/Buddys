@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from buddys_api.device_models import DeviceDesiredState
+from buddys_api.device_models import AgentMachine, BuddyRuntimeBinding, Device, DeviceDesiredState
 from buddys_api.device_store import DeviceRegistry
 from buddys_api.main import create_app
 from tools.device_simulator import cli
@@ -126,6 +126,92 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
     assert [event.event_type for event in store.list_events("device_body_sim_001")] == ["manual_done"]
 
 
+def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_snapshot(tmp_path) -> None:
+    app = create_app(device_store=DeviceRegistry(), db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "device-sim@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    store = app.state.device_store
+    store.pair_device(
+        device=Device(
+            device_id="device_body_sim_001",
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0-sim",
+        ),
+        agent_machine=AgentMachine(
+            agent_machine_id="agent_machine_home_mac",
+            owner_user_id=buddy["user_id"],
+            machine_type="local_mac",
+            endpoint="https://agent-machine.example.test",
+            public_key="agent-machine-public-key",
+            runtime_version="0.1.0",
+            status="online",
+        ),
+        binding=BuddyRuntimeBinding(
+            buddy_id=buddy["buddy_id"],
+            agent_machine_id="agent_machine_home_mac",
+            role="primary",
+        ),
+        pairing_token="pair-token-sim-auth-001",
+        idempotency_key="pair-sim-auth-001",
+    )
+
+    confirmed_capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了五个鸡蛋和一盒牛奶"},
+    )
+    assert confirmed_capture.status_code == 201
+    confirmed_proposal_id = confirmed_capture.json()["proposal"]["proposal_id"]
+    confirmed = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{confirmed_proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirmed.status_code == 200
+
+    pending_capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "香料用完了"},
+    )
+    assert pending_capture.status_code == 201
+
+    store.set_desired_state(
+        DeviceDesiredState(
+            device_id="device_body_sim_001",
+            state="manual_required",
+            revision=6,
+            display_text="Manual action needed",
+            manual_required=True,
+            user_instruction="Press the physical button after checking the pantry.",
+            source_trace_id="trace_sim_002",
+        )
+    )
+    desired_state = client.get("/devices/device_body_sim_001/desired-state").json()
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    state_memory = snapshot["state_memory"]
+    desired_state["state_memory"] = {
+        "confirmed_items": state_memory["items_by_buddy"][buddy["buddy_id"]],
+        "pending_proposal_count": state_memory["summary_by_buddy"][buddy["buddy_id"]]["pending_proposal_count"],
+    }
+
+    screen = render_screen(desired_state)
+
+    assert "manual_required" in screen
+    assert "Press the physical button after checking the pantry." in screen
+    assert "pantry: 鸡蛋 5个, 牛奶 1盒" in screen
+    assert "pending: 1 proposal(s)" in screen
+    assert "trace_sim_002" in screen
+
+
 def create_buddy(client: TestClient) -> dict[str, object]:
     response = client.post("/buddies", json={"user_id": "user_demo"})
     assert response.status_code == 201
@@ -133,6 +219,10 @@ def create_buddy(client: TestClient) -> dict[str, object]:
 
 
 def pair_payload(buddy: dict[str, object]) -> dict[str, object]:
+    return owned_pair_payload(buddy, owner_user_id="user_demo")
+
+
+def owned_pair_payload(buddy: dict[str, object], owner_user_id: str) -> dict[str, object]:
     return {
         "buddy_id": buddy["buddy_id"],
         "space_id": buddy["space_id"],
@@ -141,7 +231,7 @@ def pair_payload(buddy: dict[str, object]) -> dict[str, object]:
         "pairing_token": "pair-token-sim-001",
         "agent_machine": {
             "agent_machine_id": "agent_machine_home_mac",
-            "owner_user_id": "user_demo",
+            "owner_user_id": owner_user_id,
             "machine_type": "local_mac",
             "endpoint": "https://agent-machine.example.test",
             "public_key": "agent-machine-public-key",
@@ -149,3 +239,9 @@ def pair_payload(buddy: dict[str, object]) -> dict[str, object]:
         },
         "idempotency_key": "pair-sim-001",
     }
+
+
+def register(client: TestClient, email: str) -> str:
+    response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
+    assert response.status_code == 201
+    return response.json()["access_token"]
