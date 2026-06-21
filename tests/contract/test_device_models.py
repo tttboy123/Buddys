@@ -74,6 +74,24 @@ def test_device_heartbeat_desired_state_event_and_outbox_export_shape() -> None:
         manual_required=True,
         user_instruction="请手动把客厅灯调暗到约 35%。",
         source_trace_id="trace_001",
+        state_memory={
+            "confirmed_items": [
+                {"name": "鸡蛋", "quantity": 5, "unit": "个"},
+            ],
+            "pending_proposal_count": 1,
+        },
+        proactive_hint={
+            "kind": "consumption_inference",
+            "message": "Buddy noticed 鸡蛋 was used recently.",
+            "item_names": ["鸡蛋"],
+        },
+        recent_activity=[
+            {
+                "kind": "capture_confirmed",
+                "summary": "Confirmed 鸡蛋 5个.",
+                "created_at": "2026-06-22T10:00:00+00:00",
+            }
+        ],
     )
     event = DeviceEvent(
         device_id="device_body_001",
@@ -95,6 +113,10 @@ def test_device_heartbeat_desired_state_event_and_outbox_export_shape() -> None:
     assert heartbeat.current_state == "manual_required"
     assert desired_state.model_dump()["schema_version"] == "device_desired_state.v1"
     assert desired_state.manual_required is True
+    assert desired_state.state_memory.confirmed_items[0].name == "鸡蛋"
+    assert desired_state.state_memory.pending_proposal_count == 1
+    assert desired_state.proactive_hint.kind == "consumption_inference"
+    assert desired_state.recent_activity[0].kind == "capture_confirmed"
     assert event.model_dump()["schema_version"] == "device_event.v1"
     assert event.event_type == "manual_done"
     assert outbox_event.model_dump()["schema_version"] == "sync_outbox_event.v1"

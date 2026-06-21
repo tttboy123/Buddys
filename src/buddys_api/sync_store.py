@@ -183,6 +183,63 @@ def build_snapshot(
     }
 
 
+def build_device_state_memory_projection(
+    *,
+    buddy_id: str,
+    user_id: str,
+    state_memory_store: Any | None,
+    traces: Iterable[Any],
+) -> dict[str, Any]:
+    if state_memory_store is None:
+        return {}
+
+    items = state_memory_store.list_items(user_id=user_id, buddy_id=buddy_id)
+    pending = state_memory_store.list_pending_proposals(user_id=user_id, buddy_id=buddy_id)
+    history = state_memory_store.list_history(user_id=user_id, buddy_id=buddy_id)
+    latest_query_by_buddy = _latest_state_memory_queries_by_buddy(
+        traces=[trace for trace in traces if getattr(trace, "buddy_id", None) == buddy_id],
+        items_by_buddy={buddy_id: items},
+    )
+    recent_activity_by_buddy = _recent_state_memory_activity_by_buddy(
+        history_by_buddy={buddy_id: history},
+        pending_by_buddy={buddy_id: pending},
+        latest_query_by_buddy=latest_query_by_buddy,
+    )
+    hint = _build_state_memory_hint(items=items, history=history)
+
+    projection: dict[str, Any] = {}
+    if items or pending:
+        projection["state_memory"] = {
+            "confirmed_items": [
+                {
+                    "name": item.name,
+                    "quantity": item.quantity,
+                    "unit": item.unit,
+                }
+                for item in items
+                if item.status == "active"
+            ],
+            "pending_proposal_count": len(pending),
+        }
+    if hint is not None:
+        projection["proactive_hint"] = {
+            "kind": hint["kind"],
+            "message": hint["message"],
+            "item_names": list(hint.get("basis", {}).get("item_names", [])),
+        }
+    activity = recent_activity_by_buddy.get(buddy_id, [])
+    if activity:
+        projection["recent_activity"] = [
+            {
+                "kind": entry["kind"],
+                "summary": entry["summary"],
+                "created_at": entry["created_at"],
+            }
+            for entry in activity
+        ]
+    return projection
+
+
 def _visibility_clause(user_id: str | None) -> tuple[str, tuple[str, ...]]:
     if user_id is None:
         return "visibility = 'legacy'", ()

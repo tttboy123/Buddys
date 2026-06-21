@@ -186,6 +186,13 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_
     )
     assert pending_capture.status_code == 201
 
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+
     store.set_desired_state(
         DeviceDesiredState(
             device_id="device_body_sim_001",
@@ -198,12 +205,6 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_
         )
     )
     desired_state = client.get("/devices/device_body_sim_001/desired-state").json()
-    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
-    state_memory = snapshot["state_memory"]
-    desired_state["state_memory"] = {
-        "confirmed_items": state_memory["items_by_buddy"][buddy["buddy_id"]],
-        "pending_proposal_count": state_memory["summary_by_buddy"][buddy["buddy_id"]]["pending_proposal_count"],
-    }
 
     screen = render_screen(desired_state)
 
@@ -211,6 +212,8 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_
     assert "Press the physical button after checking the pantry." in screen
     assert "pantry: 鸡蛋 5个, 牛奶 1盒" in screen
     assert "pending: 1 proposal(s)" in screen
+    assert "hint:" in screen
+    assert "recent: 还有鸡蛋。" in screen
     assert "trace_sim_002" in screen
 
 

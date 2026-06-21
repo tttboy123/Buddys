@@ -34,6 +34,29 @@ DeviceState = Literal[
 ]
 
 
+class DeviceStateMemoryItemSummary(BaseModel):
+    name: NonEmptyStr
+    quantity: float | None = None
+    unit: str | None = None
+
+
+class DeviceStateMemoryProjection(BaseModel):
+    confirmed_items: list[DeviceStateMemoryItemSummary] = Field(default_factory=list)
+    pending_proposal_count: int = Field(ge=0, default=0)
+
+
+class DeviceProactiveHint(BaseModel):
+    kind: Literal["consumption_inference"]
+    message: NonEmptyStr
+    item_names: list[NonEmptyStr] = Field(default_factory=list)
+
+
+class DeviceRecentActivityEntry(BaseModel):
+    kind: Literal["capture_confirmed", "proposal_waiting", "query_answered"]
+    summary: NonEmptyStr
+    created_at: NonEmptyStr
+
+
 class Device(BaseModel):
     schema_version: Literal["device.v1"] = "device.v1"
     device_id: NonEmptyStr
@@ -91,6 +114,9 @@ class DeviceDesiredState(BaseModel):
     user_instruction: str | None = None
     source_trace_id: str | None = None
     idempotency_key: str | None = None
+    state_memory: DeviceStateMemoryProjection | None = None
+    proactive_hint: DeviceProactiveHint | None = None
+    recent_activity: list[DeviceRecentActivityEntry] = Field(default_factory=list)
     updated_at: str = Field(default_factory=now_iso)
 
 

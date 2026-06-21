@@ -55,6 +55,12 @@ def render_screen(desired_state: dict[str, Any]) -> str:
     if state == "asking_confirmation" and proposal_text:
         lines.append(f"confirm: {_compact(proposal_text)}")
     lines.extend(_state_memory_lines(desired_state.get("state_memory")))
+    hint_line = _proactive_hint_line(desired_state.get("proactive_hint"))
+    if hint_line:
+        lines.append(hint_line)
+    recent_line = _recent_activity_line(desired_state.get("recent_activity"))
+    if recent_line:
+        lines.append(recent_line)
     if desired_state.get("source_trace_id"):
         lines.append(f"trace: {desired_state['source_trace_id']}")
     return "\n".join(lines)
@@ -168,6 +174,27 @@ def _state_memory_lines(state_memory: Any) -> list[str]:
     if isinstance(pending_count, int) and pending_count >= 0:
         lines.append(f"pending: {pending_count} proposal(s)")
     return lines
+
+
+def _proactive_hint_line(proactive_hint: Any) -> str | None:
+    if not isinstance(proactive_hint, dict):
+        return None
+    message = proactive_hint.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return None
+    return f"hint: {_compact(message.strip())}"
+
+
+def _recent_activity_line(recent_activity: Any) -> str | None:
+    if not isinstance(recent_activity, list) or not recent_activity:
+        return None
+    latest = recent_activity[-1]
+    if not isinstance(latest, dict):
+        return None
+    summary = latest.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return None
+    return f"recent: {_compact(summary.strip())}"
 
 
 def _pantry_summary(items: Any) -> str | None:

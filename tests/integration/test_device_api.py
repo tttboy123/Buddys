@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from buddys_api.device_models import DeviceDesiredState
+from buddys_api.device_models import AgentMachine, BuddyRuntimeBinding, Device, DeviceDesiredState
 from buddys_api.device_store import DeviceRegistry
 from buddys_api.main import create_app
 
@@ -162,6 +162,99 @@ def test_desired_state_endpoint_returns_manual_required_state() -> None:
     assert body["state"] == "manual_required"
     assert body["manual_required"] is True
     assert body["user_instruction"] == "请手动把客厅灯调暗到约 35%。"
+
+
+def test_desired_state_endpoint_projects_safe_state_memory_summary_for_paired_auth_buddy(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    store.pair_device(
+        device=Device(
+            device_id="device_body_auth_001",
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0-sim",
+        ),
+        agent_machine=AgentMachine(
+            agent_machine_id="agent_machine_auth_001",
+            owner_user_id=buddy["user_id"],
+            machine_type="local_mac",
+            endpoint="https://agent-machine.example.test",
+            public_key="agent-machine-public-key",
+            runtime_version="0.2.0-sim",
+            status="online",
+        ),
+        binding=BuddyRuntimeBinding(
+            buddy_id=buddy["buddy_id"],
+            agent_machine_id="agent_machine_auth_001",
+            role="primary",
+        ),
+        pairing_token="pair-auth-device-001",
+        idempotency_key="pair-auth-device-001",
+    )
+
+    confirmed_capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"content": "我买了五个鸡蛋和一盒牛奶"},
+    )
+    assert confirmed_capture.status_code == 201
+    confirmed_proposal_id = confirmed_capture.json()["proposal"]["proposal_id"]
+    confirmed = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{confirmed_proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert confirmed.status_code == 200
+
+    pending_capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"content": "香料用完了"},
+    )
+    assert pending_capture.status_code == 201
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+
+    app.state.device_store.set_desired_state(
+        DeviceDesiredState(
+            device_id="device_body_auth_001",
+            state="manual_required",
+            revision=6,
+            display_text="Manual action needed",
+            manual_required=True,
+            user_instruction="Press the physical button after checking the pantry.",
+            source_trace_id="trace_sim_002",
+        )
+    )
+
+    response = client.get("/devices/device_body_auth_001/desired-state")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert sorted(item["name"] for item in body["state_memory"]["confirmed_items"]) == ["牛奶", "鸡蛋"]
+    assert body["state_memory"]["pending_proposal_count"] == 1
+    assert body["proactive_hint"]["kind"] == "consumption_inference"
+    assert body["proactive_hint"]["item_names"] in (["牛奶"], ["鸡蛋"])
+    assert body["recent_activity"][-1]["kind"] == "query_answered"
+    assert body["recent_activity"][-1]["summary"] == "还有鸡蛋。"
+    serialized = str(body).lower()
+    assert "api_key" not in serialized
+    assert "capabilities" not in serialized
+    assert "token" not in serialized
 
 
 def test_device_events_accept_all_p0_button_actions_without_executing_device_action() -> None:

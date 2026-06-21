@@ -57,6 +57,35 @@ def test_render_state_memory_summary_includes_confirmed_pantry_and_pending_count
     assert "pending: 2 proposal(s)" in screen
 
 
+def test_render_screen_includes_proactive_hint_and_recent_activity_summary() -> None:
+    screen = render_screen(
+        {
+            "state": "idle",
+            "state_memory": {
+                "confirmed_items": [
+                    {"name": "鸡蛋", "quantity": 5, "unit": "个"},
+                ],
+                "pending_proposal_count": 1,
+            },
+            "proactive_hint": {
+                "kind": "consumption_inference",
+                "message": "Buddy noticed 鸡蛋 was used recently.",
+                "item_names": ["鸡蛋"],
+            },
+            "recent_activity": [
+                {
+                    "kind": "query_answered",
+                    "summary": "还有鸡蛋。",
+                    "created_at": "2026-06-22T10:00:00+00:00",
+                }
+            ],
+        }
+    )
+
+    assert "hint: Buddy noticed 鸡蛋 was used recently." in screen
+    assert "recent: 还有鸡蛋。" in screen
+
+
 def test_render_screen_includes_stale_sync_cue_from_desired_state_timestamp() -> None:
     screen = render_screen(
         {
