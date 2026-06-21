@@ -92,6 +92,7 @@ def test_sync_snapshot_and_events_include_legacy_runtime_device_trace_and_cost_s
     assert pair_response.status_code == 201
     heartbeat_response = client.post(
         "/devices/device_body_001/heartbeat",
+        headers=pairing_headers("pair-token-sync-001"),
         json={
             "firmware_version": "0.1.0",
             "wifi_rssi": -55,
@@ -103,6 +104,7 @@ def test_sync_snapshot_and_events_include_legacy_runtime_device_trace_and_cost_s
     assert heartbeat_response.status_code == 200
     event_response = client.post(
         "/devices/device_body_001/events",
+        headers=pairing_headers("pair-token-sync-001"),
         json={"event_type": "ack", "idempotency_key": "event-sync-001", "payload": {"source": "button"}},
     )
     assert event_response.status_code == 201
@@ -301,6 +303,10 @@ def register(client: TestClient, email: str) -> str:
     response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
     assert response.status_code == 201
     return response.json()["access_token"]
+
+
+def pairing_headers(pairing_token: str = "pair-token-001") -> dict[str, str]:
+    return {"X-Buddys-Pairing-Token": pairing_token}
 
 
 def pair_payload(buddy: dict[str, object]) -> dict[str, object]:

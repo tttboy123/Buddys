@@ -85,7 +85,7 @@ def main(argv: Sequence[str] | None = None, request_json: RequestJson | None = N
             buddy = requester("POST", _api_url(args.base_url, "buddies"), {"user_id": args.user_id})
             payload = _build_pair_payload(args, buddy)
             response = requester("POST", _device_url(args.base_url, args.device_id, "pair"), payload)
-            _print_json({"buddy": buddy, "pairing": response})
+            _print_json({"buddy": buddy, "pairing_token": payload["pairing_token"], "pairing": response})
             return 0
 
         if args.command == "heartbeat":

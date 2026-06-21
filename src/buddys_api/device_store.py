@@ -134,6 +134,8 @@ class DeviceRegistry:
         if existing_pair_key is not None:
             raise DuplicatePairingError("pairing token has already been used")
 
+        self._invalidate_pairing_tokens_for_device(device.device_id)
+
         pairing = DevicePairing(
             device=device,
             agent_machine=agent_machine,
@@ -156,3 +158,12 @@ class DeviceRegistry:
         if pairing.device.device_id != device_id:
             raise KeyError("pairing token does not match device")
         return pairing
+
+    def _invalidate_pairing_tokens_for_device(self, device_id: str) -> None:
+        stale_tokens = [
+            pairing_token
+            for pairing_token, pair_key in self._pairing_token_index.items()
+            if self._pairings_by_idempotency[pair_key].device.device_id == device_id
+        ]
+        for pairing_token in stale_tokens:
+            del self._pairing_token_index[pairing_token]

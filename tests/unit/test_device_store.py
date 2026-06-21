@@ -193,3 +193,55 @@ def test_device_registry_requires_matching_pairing_token_for_device_auth() -> No
         pass
     else:
         raise AssertionError("expected mismatched device pairing token to fail")
+
+
+def test_device_registry_repair_invalidates_older_pairing_token_for_same_device() -> None:
+    store = DeviceRegistry()
+    device = Device(
+        device_id="device_body_001",
+        buddy_id="buddy_home_001",
+        space_id="space_home",
+        public_key="device-public-key",
+        pairing_state="paired",
+        firmware_version="0.1.0",
+    )
+    machine = AgentMachine(
+        agent_machine_id="agent_machine_home_mac",
+        owner_user_id="user_demo",
+        machine_type="local_mac",
+        endpoint="https://agent-machine.example.test",
+        public_key="agent-machine-public-key",
+        runtime_version="0.1.0",
+        status="online",
+    )
+    binding = BuddyRuntimeBinding(
+        buddy_id="buddy_home_001",
+        agent_machine_id="agent_machine_home_mac",
+        role="primary",
+        authority_epoch=1,
+        state_revision=0,
+    )
+
+    store.pair_device(
+        device=device,
+        agent_machine=machine,
+        binding=binding,
+        pairing_token="pair-token-old",
+        idempotency_key="pair-001",
+    )
+    rotated = store.pair_device(
+        device=device.model_copy(update={"firmware_version": "0.2.0"}),
+        agent_machine=machine.model_copy(update={"runtime_version": "0.2.0"}),
+        binding=binding,
+        pairing_token="pair-token-new",
+        idempotency_key="pair-002",
+    )
+
+    try:
+        store.require_device_pairing_token("device_body_001", "pair-token-old")
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("expected old pairing token to be invalidated after re-pair")
+
+    assert store.require_device_pairing_token("device_body_001", "pair-token-new") == rotated

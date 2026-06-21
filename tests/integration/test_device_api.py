@@ -141,6 +141,37 @@ def test_pair_device_is_idempotent_for_duplicate_device_and_key() -> None:
     assert store.get_device("device_body_001").public_key == "device-public-key"
 
 
+def test_repair_rotates_device_auth_and_invalidates_older_pairing_token() -> None:
+    store = DeviceRegistry()
+    client = make_client(store)
+    buddy = create_buddy(client)
+
+    first = client.post(
+        "/devices/device_body_001/pair",
+        json=pair_payload(buddy, idempotency_key="pair-001", pairing_token="pair-token-old"),
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/devices/device_body_001/pair",
+        json=pair_payload(buddy, idempotency_key="pair-002", pairing_token="pair-token-new"),
+    )
+    assert second.status_code == 201
+
+    old_token = client.get(
+        "/devices/device_body_001/desired-state",
+        headers=pairing_headers("pair-token-old"),
+    )
+    assert old_token.status_code == 403
+    assert old_token.json() == {"detail": {"code": "device_auth_invalid"}}
+
+    new_token = client.get(
+        "/devices/device_body_001/desired-state",
+        headers=pairing_headers("pair-token-new"),
+    )
+    assert new_token.status_code == 200
+
+
 def test_desired_state_endpoint_returns_manual_required_state() -> None:
     store = DeviceRegistry()
     store.set_desired_state(

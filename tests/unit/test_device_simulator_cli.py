@@ -66,6 +66,45 @@ def test_pair_command_bootstraps_buddy_then_pairs_device(capsys) -> None:
 
     output = capsys.readouterr().out
     assert '"device_id": "dev_home_001"' in output
+    assert '"pairing_token": "pair-token-test-001"' in output
+
+
+def test_pair_command_surfaces_generated_pairing_token_when_flag_is_omitted(capsys) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_request(method: str, url: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
+        calls.append((method, url, payload))
+        if url == "http://runtime.test/buddies":
+            return {
+                "buddy_id": "buddy_demo_001",
+                "user_id": "user_demo",
+                "name": "Home Buddy",
+                "space_id": "home",
+            }
+        return {"device": {"device_id": "dev_home_001"}, "binding": {"buddy_id": "buddy_demo_001"}}
+
+    exit_code = cli.main(
+        [
+            "pair",
+            "--device-id",
+            "dev_home_001",
+            "--base-url",
+            "http://runtime.test",
+            "--user-id",
+            "user_demo",
+            "--idempotency-key",
+            "pair-test-generated-001",
+        ],
+        request_json=fake_request,
+    )
+
+    assert exit_code == 0
+    generated_token = calls[1][2]["pairing_token"]
+    assert isinstance(generated_token, str)
+    assert generated_token.startswith("pair-token-")
+
+    output = capsys.readouterr().out
+    assert f'"pairing_token": "{generated_token}"' in output
 
 
 def test_cli_builds_device_endpoint_urls_without_real_http(capsys) -> None:
