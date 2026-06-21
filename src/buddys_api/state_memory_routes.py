@@ -101,7 +101,7 @@ def query_state_memory(
     except StateMemoryProviderError as exc:
         if exc.code == "state_memory_query_unsupported":
             raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
-        raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
+        raise HTTPException(status_code=503, detail={"code": exc.code, **exc.details}) from exc
 
 
 @router.post("/captures/{source}", status_code=201)
@@ -141,7 +141,7 @@ def create_state_memory_capture_proposal(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
     except StateMemoryProviderError as exc:
-        raise HTTPException(status_code=503, detail={"code": exc.code}) from exc
+        raise HTTPException(status_code=503, detail={"code": exc.code, **exc.details}) from exc
     return {
         "proposal": proposal,
         "state_revision": revision,

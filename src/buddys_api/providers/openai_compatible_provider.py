@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections.abc import Sequence
@@ -13,11 +14,21 @@ from buddys_api.provider_models import MINIMAX_OPENAI_BASE_URL
 from buddys_api.state_memory_models import StateMemoryCaptureSource, StateMemoryDelta
 
 
+logger = logging.getLogger(__name__)
+
+
 class StateMemoryProviderError(RuntimeError):
-    def __init__(self, code: str, *, usage: ProviderUsage | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        usage: ProviderUsage | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.usage = usage
+        self.details = details or {}
 
 
 class ProviderConfigurationError(StateMemoryProviderError):
@@ -196,7 +207,27 @@ class OpenAICompatibleProvider:
                 return response
         except ProviderConfigurationError:
             raise
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            code = "provider_auth_failed" if status_code in {401, 403} else "model_unavailable"
+            logger.warning(
+                "state_memory_provider_http_error provider=%s model=%s status=%s error=%s",
+                self.provider,
+                self.model,
+                status_code,
+                _provider_error_summary(exc.response),
+            )
+            raise ModelUnavailableError(
+                code,
+                details={"upstream_status": status_code},
+            ) from exc
         except httpx.HTTPError as exc:
+            logger.warning(
+                "state_memory_provider_transport_error provider=%s model=%s error=%s",
+                self.provider,
+                self.model,
+                type(exc).__name__,
+            )
             raise ModelUnavailableError("model_unavailable") from exc
 
 
@@ -211,6 +242,21 @@ def _message_content(content: Any) -> str:
         if parts:
             return "".join(parts)
     raise ModelResponseError("model_response_invalid")
+
+
+def _provider_error_summary(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except Exception:
+        text = response.text.strip()
+        return text[:200] if text else "<empty>"
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()[:200]
+    return json.dumps(body, ensure_ascii=False)[:200]
 
 
 def _usage_from_response(body: dict[str, Any], *, fallback_input: str, fallback_output: str) -> ProviderUsage:

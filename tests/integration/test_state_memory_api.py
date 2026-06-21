@@ -4,6 +4,7 @@ from buddys_api.main import create_app
 from buddys_api.providers.openai_compatible_provider import (
     OpenAICompatibleProvider,
     ProviderUsage,
+    StateMemoryProviderError,
     StateMemoryQueryUnderstanding,
 )
 from buddys_api.state_memory_models import StateMemoryDelta
@@ -154,6 +155,44 @@ def test_state_memory_capture_routes_require_auth_and_scope_writes_to_buddy_owne
     assert owner_capture.status_code == 201
     assert cross_user_confirm.status_code == 404
     assert cross_user_confirm.json() == {"detail": {"code": "buddy_not_found"}}
+
+
+def test_state_memory_capture_surfaces_provider_auth_failed_details(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FailingProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            raise StateMemoryProviderError(
+                "provider_auth_failed",
+                details={"upstream_status": 401},
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FailingProvider()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了五个鸡蛋"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "code": "provider_auth_failed",
+            "upstream_status": 401,
+        }
+    }
 
 
 def test_state_memory_capture_proposals_cover_all_supported_sources_without_silent_writes(tmp_path) -> None:

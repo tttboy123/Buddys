@@ -466,6 +466,37 @@ def test_openai_compatible_provider_raises_typed_error_for_transport_failure(mon
         provider.understand_state_memory_query(question="有鸡蛋吗")
 
 
+def test_openai_compatible_provider_maps_401_to_provider_auth_failed(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            json={
+                "type": "error",
+                "error": {
+                    "type": "authorized_error",
+                    "message": "invalid api key (2049)",
+                    "http_code": "401",
+                },
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        provider_id="minimax-openai",
+        base_url="https://api.minimax.io/v1",
+        api_key_env_var="OPENAI_API_KEY",
+        model="MiniMax-M3",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ModelUnavailableError) as exc_info:
+        provider.parse_state_memory_capture(source="conversation", content="买了五个鸡蛋")
+
+    assert exc_info.value.code == "provider_auth_failed"
+    assert exc_info.value.details == {"upstream_status": 401}
+
+
 def test_openai_compatible_provider_requires_non_empty_api_key_env_var(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     provider = OpenAICompatibleProvider(
