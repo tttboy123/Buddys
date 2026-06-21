@@ -17,6 +17,7 @@ from buddys_api.auth_models import UserPublic
 from buddys_api.auth_routes import router as auth_router
 from buddys_api.auth_store import AuthStore
 from buddys_api.buddy_store import BuddyStore
+from buddys_api.cost_meter import CostMeter
 from buddys_api.db import connect_db, initialize_database
 from buddys_api.device_routes import router as device_router
 from buddys_api.device_store import DeviceRegistry
@@ -32,6 +33,7 @@ from buddys_api.state_memory_store import StateMemoryStore
 from buddys_api.sync_routes import router as sync_router
 from buddys_api.sync_store import SyncStore
 from buddys_api.token_plan import TokenPlanLimitExceeded, UsageStore
+from buddys_api.trace_store import TraceStore
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -78,7 +80,7 @@ def create_app(
     app.state.agent_store = AgentStore(connection)
     app.state.state_memory_store = StateMemoryStore(connection)
     app.state.engagement_metrics_store = EngagementMetricsStore(connection)
-    app.state.runtime = runtime or _runtime_from_env(app.state.buddy_store)
+    app.state.runtime = runtime or _runtime_from_env(connection=connection, buddy_store=app.state.buddy_store)
     if runtime is not None and runtime.buddy_store is None:
         runtime.buddy_store = app.state.buddy_store
     if app.state.runtime.usage_store is None:
@@ -280,7 +282,10 @@ def _optional_current_user(request: Request, authorization: str | None) -> UserP
 
 
 def _can_view_trace(request: Request, *, trace: ActionTrace, current_user: UserPublic | None) -> bool:
-    if _buddy_origin(request, trace.buddy_id) != "auth":
+    origin = _buddy_origin(request, trace.buddy_id)
+    if origin is None:
+        return False
+    if origin != "auth":
         return True
     return current_user is not None and current_user.user_id == trace.user_id
 
@@ -290,16 +295,19 @@ def _can_view_cost_event(request: Request, *, event: CostEvent, current_user: Us
         buddy = request.app.state.buddy_store.get(event.buddy_id)
     except KeyError:
         return False
-    if _buddy_origin(request, event.buddy_id) != "auth":
+    origin = _buddy_origin(request, event.buddy_id)
+    if origin is None:
+        return False
+    if origin != "auth":
         return True
     return current_user is not None and current_user.user_id == buddy.user_id
 
 
-def _buddy_origin(request: Request, buddy_id: str) -> str:
+def _buddy_origin(request: Request, buddy_id: str) -> str | None:
     try:
         return request.app.state.buddy_store.origin_for_buddy(buddy_id)
     except KeyError:
-        return "legacy"
+        return None
 
 
 def _db_path(db_path: str | Path | None) -> str | Path:
@@ -308,13 +316,21 @@ def _db_path(db_path: str | Path | None) -> str | Path:
     return os.getenv("BUDDYS_DB_PATH", ":memory:")
 
 
-def _runtime_from_env(buddy_store: BuddyStore | None = None) -> BuddysRuntime:
+def _runtime_from_env(
+    connection,
+    buddy_store: BuddyStore | None = None,
+) -> BuddysRuntime:
     can_control_devices = os.getenv("BUDDYS_MOCK_CAN_CONTROL_DEVICES", "true").lower() not in {
         "0",
         "false",
         "no",
     }
-    return BuddysRuntime(adapter=MockHomeAdapter(can_control_devices=can_control_devices), buddy_store=buddy_store)
+    return BuddysRuntime(
+        adapter=MockHomeAdapter(can_control_devices=can_control_devices),
+        trace_store=TraceStore(connection),
+        cost_meter=CostMeter(connection),
+        buddy_store=buddy_store,
+    )
 
 
 app = create_app()

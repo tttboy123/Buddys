@@ -304,3 +304,44 @@ def test_sync_snapshot_stale_consumption_does_not_override_low_stock_hint(tmp_pa
     assert hint["kind"] == "consumption_inference"
     assert hint["basis"]["item_names"] == ["鸡蛋"]
     assert "recent_change_type" not in hint["basis"]
+
+
+def test_sync_snapshot_keeps_latest_auth_state_memory_query_after_restart(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    first_app = create_app(db_path=db_path)
+    first_client = TestClient(first_app)
+    token = register(first_client, "restart-owner@example.com")
+    buddy = first_client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    first_app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=5,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    query = first_client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+    first_client.close()
+
+    second_client = TestClient(create_app(db_path=db_path))
+
+    snapshot = second_client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    latest_query = snapshot["state_memory"]["latest_query_by_buddy"][buddy["buddy_id"]]
+
+    assert latest_query["trace_id"] == query.json()["trace_id"]
+    assert latest_query["question"] == "有鸡蛋吗"
+    assert latest_query["summary"] == "还有鸡蛋。"
+    assert latest_query["evidence_items"][0]["name"] == "鸡蛋"
+    assert latest_query["evidence_items"][0]["source"] == "manual"

@@ -970,6 +970,70 @@ def test_state_memory_query_trace_and_cost_artifacts_are_owner_scoped(tmp_path) 
     assert legacy_message["cost_event_ids"][0] in {event["cost_event_id"] for event in unauth_costs["cost_events"]}
 
 
+def test_missing_buddy_row_fails_closed_for_persisted_auth_trace_and_cost_visibility(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=5,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+    trace_id = query.json()["trace_id"]
+    cost_event_id = client.get(
+        f"/traces/{trace_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    ).json()["cost_refs"][0]
+
+    original_origin_for_buddy = app.state.buddy_store.origin_for_buddy
+    original_get = app.state.buddy_store.get
+
+    def missing_origin_for_buddy(buddy_id: str):
+        if buddy_id == buddy["buddy_id"]:
+            raise KeyError(f"buddy not found: {buddy_id}")
+        return original_origin_for_buddy(buddy_id)
+
+    def missing_get(buddy_id: str):
+        if buddy_id == buddy["buddy_id"]:
+            raise KeyError(f"buddy not found: {buddy_id}")
+        return original_get(buddy_id)
+
+    app.state.buddy_store.origin_for_buddy = missing_origin_for_buddy
+    app.state.buddy_store.get = missing_get
+
+    unauth_trace = client.get(f"/traces/{trace_id}")
+    owner_trace = client.get(
+        f"/traces/{trace_id}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    unauth_costs = client.get("/cost-events").json()["cost_events"]
+    owner_costs = client.get("/cost-events", headers={"Authorization": f"Bearer {owner_token}"}).json()["cost_events"]
+
+    assert unauth_trace.status_code == 404
+    assert unauth_trace.json() == {"detail": {"code": "trace_not_found"}}
+    assert owner_trace.status_code == 404
+    assert owner_trace.json() == {"detail": {"code": "trace_not_found"}}
+    assert cost_event_id not in {event["cost_event_id"] for event in unauth_costs}
+    assert cost_event_id not in {event["cost_event_id"] for event in owner_costs}
+
+
 def test_state_memory_real_capture_preflight_blocks_over_limit_before_provider_call(tmp_path, monkeypatch) -> None:
     import httpx
 

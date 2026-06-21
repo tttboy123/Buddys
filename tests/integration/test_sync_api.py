@@ -215,6 +215,36 @@ def test_sync_snapshot_with_null_session_token_hash_degrades_to_401_not_500(tmp_
     assert response.json() == {"detail": {"code": "invalid_or_expired_token"}}
 
 
+def test_sync_snapshot_rehydrates_legacy_runtime_trace_and_cost_after_restart(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    first_client = TestClient(create_app(db_path=db_path))
+
+    buddy = first_client.post("/buddies", json={"user_id": "user_demo"}).json()
+    message = first_client.post(
+        f"/buddies/{buddy['buddy_id']}/messages",
+        json={"user_id": "user_demo", "message": "把客厅灯调暗"},
+    ).json()
+    confirm = first_client.post(f"/proposals/{message['proposal_id']}/confirm", json={"approved": True}).json()
+
+    assert first_client.get(f"/traces/{confirm['trace_id']}").status_code == 200
+    assert len(first_client.get("/cost-events").json()["cost_events"]) == 1
+    first_client.close()
+
+    second_client = TestClient(create_app(db_path=db_path))
+
+    trace_response = second_client.get(f"/traces/{confirm['trace_id']}")
+    cost_events = second_client.get("/cost-events").json()["cost_events"]
+    snapshot = second_client.get("/sync/snapshot").json()
+
+    assert trace_response.status_code == 200
+    assert trace_response.json()["trace_id"] == confirm["trace_id"]
+    assert len(cost_events) == 1
+    assert cost_events[0]["trace_id"] == confirm["trace_id"]
+    assert snapshot["traces"][0]["trace_id"] == confirm["trace_id"]
+    assert snapshot["cost_summary"]["event_count"] == 1
+    assert snapshot["cost_summary"]["total_tokens"] > 0
+
+
 def test_sync_snapshot_includes_owner_agents_but_not_for_unauthenticated_or_other_users(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     owner_token = register(client, "owner@example.com")

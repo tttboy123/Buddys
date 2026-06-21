@@ -148,6 +148,29 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_agents_user_id
             ON agents(user_id, created_at);
 
+        CREATE TABLE IF NOT EXISTS action_traces (
+            trace_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_action_traces_buddy_created
+            ON action_traces(buddy_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS cost_events_runtime (
+            cost_event_id TEXT PRIMARY KEY,
+            trace_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cost_events_runtime_buddy_created
+            ON cost_events_runtime(buddy_id, created_at);
+
         CREATE TABLE IF NOT EXISTS state_memory_items (
             item_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
