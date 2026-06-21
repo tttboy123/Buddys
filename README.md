@@ -20,9 +20,10 @@ PYTHONPATH=src .venv/bin/python -m uvicorn buddys_api.main:app --host 127.0.0.1 
 Use `/console` as the primary public surface for validation deployments.
 
 - Bind the runtime to `0.0.0.0:$PORT`.
-- Set `BUDDYS_DEFAULT_OPENAI_API_KEY` so zero-config users can reach the system-managed MiniMax provider.
+- Set either `BUDDYS_DEFAULT_OPENAI_API_KEY` or `BUDDYS_DEFAULT_TOKEN_PLAN_KEY` so zero-config users can reach the system-managed MiniMax provider.
 - Keep validation deployments invite-only while auth, state-memory, and multimodal capture are still under active iteration.
-- Keep user-configured providers on `OPENAI_API_KEY`; the system-managed default provider stays internal and does not appear in `/providers`.
+- Keep the MiniMax OpenAI-compatible base URL on `https://api.minimaxi.com/v1`.
+- Keep user-configured providers on env-var references such as `OPENAI_API_KEY` or `MINIMAX_TOKEN_PLAN_KEY`; the system-managed default provider stays internal and does not appear in `/providers`.
 
 Example hosted-style local boot:
 
@@ -45,9 +46,15 @@ Minimum env file contract in `/etc/buddys/buddys.env`:
 
 ```bash
 BUDDYS_DEFAULT_OPENAI_API_KEY=replace-with-real-key
+BUDDYS_DEFAULT_TOKEN_PLAN_KEY=
 BUDDYS_INVITE_CODE=replace-with-invite-code
 BUDDYS_DEFAULT_MODEL=MiniMax-M3
 ```
+
+Set one default key mode for the server-managed provider:
+
+- `BUDDYS_DEFAULT_OPENAI_API_KEY` for MiniMax API-key mode
+- `BUDDYS_DEFAULT_TOKEN_PLAN_KEY` for MiniMax Token-Plan mode
 
 Expected host shape:
 

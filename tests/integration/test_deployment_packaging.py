@@ -11,6 +11,8 @@ def test_readme_documents_hosted_validation_deployment_contract() -> None:
 
     assert "PORT" in readme
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" in readme
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" in readme
+    assert "https://api.minimaxi.com/v1" in readme
     assert "invite-only" in readme
     assert "/console" in readme
 
@@ -25,6 +27,7 @@ def test_render_yaml_packages_single_python_web_service_for_console() -> None:
     assert "$PORT" in render_yaml
     assert "BUDDYS_DEFAULT_MODEL" in render_yaml
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" in render_yaml
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" in render_yaml
 
 
 def test_readme_documents_tencent_lighthouse_deployment_contract() -> None:
@@ -34,6 +37,7 @@ def test_readme_documents_tencent_lighthouse_deployment_contract() -> None:
     assert "deploy/tencent/install_lighthouse.sh" in readme
     assert "BUDDYS_INVITE_CODE" in readme
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" in readme
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" in readme
 
 
 def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> None:
@@ -68,7 +72,11 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
 
     assert "BUDDYSDEFAULTOPENAIAPIKEY" in env_wrapper
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" in env_wrapper
+    assert "BUDDYSDEFAULTTOKENPLANKEY" in env_wrapper
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" in env_wrapper
     assert "BUDDYSINVITECODE" in env_wrapper
+    assert "MINIMAXTOKENPLANKEY" in env_wrapper
+    assert "MINIMAX_TOKEN_PLAN_KEY" in env_wrapper
     assert "OPENAIAPIKEY" in env_wrapper
 
     assert "metadata.tencentyun.com/latest/meta-data/public-ipv4" in public_ip_helper
@@ -149,9 +157,11 @@ def test_tencent_env_wrapper_restores_canonical_env_names_from_orcaterm_file(tmp
         "\n".join(
             [
                 "BUDDYSDEFAULTOPENAIAPIKEY=default-key",
+                "BUDDYSDEFAULTTOKENPLANKEY=default-plan-key",
                 "BUDDYSINVITECODE=invite-code",
                 "BUDDYSDEFAULTMODEL=MiniMax-M3",
                 "OPENAIAPIKEY=user-key",
+                "MINIMAXTOKENPLANKEY=user-plan-key",
             ]
         )
         + "\n",
@@ -168,9 +178,11 @@ def test_tencent_env_wrapper_restores_canonical_env_names_from_orcaterm_file(tmp
             (
                 "import os, json; print(json.dumps({"
                 "'default': os.getenv('BUDDYS_DEFAULT_OPENAI_API_KEY'), "
+                "'default_token_plan': os.getenv('BUDDYS_DEFAULT_TOKEN_PLAN_KEY'), "
                 "'invite': os.getenv('BUDDYS_INVITE_CODE'), "
                 "'model': os.getenv('BUDDYS_DEFAULT_MODEL'), "
-                "'openai': os.getenv('OPENAI_API_KEY')"
+                "'openai': os.getenv('OPENAI_API_KEY'), "
+                "'token_plan': os.getenv('MINIMAX_TOKEN_PLAN_KEY')"
                 "}))"
             ),
         ],
@@ -181,5 +193,5 @@ def test_tencent_env_wrapper_restores_canonical_env_names_from_orcaterm_file(tmp
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
-        '{"default": "default-key", "invite": "invite-code", "model": "MiniMax-M3", "openai": "user-key"}'
+        '{"default": "default-key", "default_token_plan": "default-plan-key", "invite": "invite-code", "model": "MiniMax-M3", "openai": "user-key", "token_plan": "user-plan-key"}'
     )

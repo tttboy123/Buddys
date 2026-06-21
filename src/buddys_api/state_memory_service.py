@@ -11,6 +11,7 @@ from buddys_api.provider_models import (
     SYSTEM_DEFAULT_MODEL_NAME,
     SYSTEM_DEFAULT_PROVIDER_ENV_VAR,
     SYSTEM_DEFAULT_PROVIDER_ID,
+    SYSTEM_DEFAULT_TOKEN_PLAN_ENV_VAR,
 )
 from buddys_api.provider_store import ProviderStore
 from buddys_api.providers.openai_compatible_provider import (
@@ -836,15 +837,19 @@ def _estimated_image_preflight_tokens(image_base64: str | None) -> int:
 def _system_default_provider_config():
     from buddys_api.provider_models import ProviderConfigPublic
 
-    api_key = os.getenv(SYSTEM_DEFAULT_PROVIDER_ENV_VAR, "").strip()
-    if not api_key:
+    api_key_env_var = None
+    if os.getenv(SYSTEM_DEFAULT_PROVIDER_ENV_VAR, "").strip():
+        api_key_env_var = SYSTEM_DEFAULT_PROVIDER_ENV_VAR
+    elif os.getenv(SYSTEM_DEFAULT_TOKEN_PLAN_ENV_VAR, "").strip():
+        api_key_env_var = SYSTEM_DEFAULT_TOKEN_PLAN_ENV_VAR
+    if api_key_env_var is None:
         return None
     return ProviderConfigPublic(
         provider_id=SYSTEM_DEFAULT_PROVIDER_ID,
         display_name="System-managed MiniMax default",
         provider_type="openai_compatible",
         base_url=MINIMAX_OPENAI_BASE_URL,
-        api_key_env_var=SYSTEM_DEFAULT_PROVIDER_ENV_VAR,
+        api_key_env_var=api_key_env_var,
         default_model=os.getenv(SYSTEM_DEFAULT_MODEL_ENV_VAR, "").strip() or SYSTEM_DEFAULT_MODEL_NAME,
         configured=True,
         created_at="system",

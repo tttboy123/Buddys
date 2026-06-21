@@ -866,7 +866,7 @@ def test_state_memory_real_capture_preflight_blocks_over_limit_before_provider_c
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -881,7 +881,7 @@ def test_state_memory_real_capture_preflight_blocks_over_limit_before_provider_c
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -939,7 +939,7 @@ def test_state_memory_real_capture_records_provider_usage_and_unrecognized(tmp_p
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -979,7 +979,7 @@ def test_state_memory_real_capture_records_provider_usage_and_unrecognized(tmp_p
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1038,7 +1038,7 @@ def test_state_memory_real_capture_persists_trace_for_cost_event(tmp_path, monke
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1078,7 +1078,7 @@ def test_state_memory_real_capture_persists_trace_for_cost_event(tmp_path, monke
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1131,7 +1131,7 @@ def test_state_memory_real_query_uses_model_understanding_and_records_real_usage
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1173,7 +1173,7 @@ def test_state_memory_real_query_uses_model_understanding_and_records_real_usage
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1225,7 +1225,7 @@ def test_state_memory_real_query_recipe_synonym_matches_available_inventory(tmp_
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1268,7 +1268,7 @@ def test_state_memory_real_query_recipe_synonym_matches_available_inventory(tmp_
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1309,7 +1309,7 @@ def test_state_memory_real_have_item_synonym_matches_available_inventory(tmp_pat
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1351,7 +1351,7 @@ def test_state_memory_real_have_item_synonym_matches_available_inventory(tmp_pat
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1393,7 +1393,7 @@ def test_state_memory_real_query_rejects_semantically_empty_recipe_understanding
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1424,7 +1424,7 @@ def test_state_memory_real_query_rejects_semantically_empty_recipe_understanding
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1459,7 +1459,7 @@ def test_state_memory_real_capture_failed_parse_still_records_usage_cost_and_tra
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1477,7 +1477,7 @@ def test_state_memory_real_capture_failed_parse_still_records_usage_cost_and_tra
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1545,7 +1545,7 @@ def test_state_memory_real_query_invalid_understanding_still_records_usage_cost_
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1576,7 +1576,7 @@ def test_state_memory_real_query_invalid_understanding_still_records_usage_cost_
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1640,7 +1640,7 @@ def test_state_memory_real_query_unsupported_still_records_usage_cost_and_trace(
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1671,7 +1671,7 @@ def test_state_memory_real_query_unsupported_still_records_usage_cost_and_trace(
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -1720,7 +1720,7 @@ def test_state_memory_real_provider_missing_env_key_fails_instead_of_falling_bac
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1753,6 +1753,7 @@ def test_state_memory_zero_config_default_provider_uses_system_managed_env_witho
     client = TestClient(app)
     token = register(client, "owner@example.com")
     monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    monkeypatch.setenv("BUDDYS_DEFAULT_TOKEN_PLAN_KEY", "sk-cp-system-default")
     buddy = client.post(
         "/me/buddies",
         headers={"Authorization": f"Bearer {token}"},
@@ -1806,11 +1807,57 @@ def test_state_memory_zero_config_default_provider_uses_system_managed_env_witho
     }
     assert providers["configs"] == []
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" not in str(providers)
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" not in str(providers)
     assert "system-minimax-default" not in str(providers)
 
 
-def test_state_memory_without_default_env_still_falls_back_to_mock_provider(tmp_path, monkeypatch) -> None:
+def test_state_memory_zero_config_token_plan_default_provider_is_used_when_api_key_default_absent(
+    tmp_path,
+    monkeypatch,
+) -> None:
     monkeypatch.delenv("BUDDYS_DEFAULT_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("BUDDYS_DEFAULT_TOKEN_PLAN_KEY", "sk-cp-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    seen = {}
+
+    class FakeDefaultProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content):
+            seen["source"] = source
+            seen["content"] = content
+            return ([StateMemoryDelta(item_name="牛奶", operation="upsert", source=source)], [])
+
+    def provider_factory(config):
+        seen["provider_id"] = config.provider_id
+        seen["api_key_env_var"] = config.api_key_env_var
+        return FakeDefaultProvider()
+
+    app.state.state_memory_service.provider_factory = provider_factory
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了牛奶"},
+    )
+
+    assert response.status_code == 201
+    assert seen["provider_id"] == "system-minimax-default"
+    assert seen["api_key_env_var"] == "BUDDYS_DEFAULT_TOKEN_PLAN_KEY"
+
+
+def test_state_memory_without_any_default_env_still_falls_back_to_mock_provider(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("BUDDYS_DEFAULT_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("BUDDYS_DEFAULT_TOKEN_PLAN_KEY", raising=False)
     app = create_app(db_path=tmp_path / "buddys.sqlite3")
     client = TestClient(app)
     token = register(client, "owner@example.com")
@@ -1852,7 +1899,7 @@ def test_state_memory_user_configured_real_provider_wins_over_system_default_pro
             "provider_id": "user-minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1910,7 +1957,7 @@ def test_state_memory_multiple_real_provider_configs_fail_fast_instead_of_lexico
                 "provider_id": provider_id,
                 "display_name": f"Provider {provider_id}",
                 "provider_type": "openai_compatible",
-                "base_url": "https://api.minimax.io/v1",
+                "base_url": "https://api.minimaxi.com/v1",
                 "api_key_env_var": "OPENAI_API_KEY",
                 "default_model": "MiniMax-M3",
             },
@@ -1961,7 +2008,7 @@ def test_state_memory_real_capture_preflight_blocks_near_limit_before_provider_c
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -1975,7 +2022,7 @@ def test_state_memory_real_capture_preflight_blocks_near_limit_before_provider_c
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2036,7 +2083,7 @@ def test_state_memory_real_photo_capture_preflight_blocks_near_limit_before_prov
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2050,7 +2097,7 @@ def test_state_memory_real_photo_capture_preflight_blocks_near_limit_before_prov
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2108,7 +2155,7 @@ def test_state_memory_real_capture_post_call_over_limit_returns_429_without_pers
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2150,7 +2197,7 @@ def test_state_memory_real_capture_post_call_over_limit_returns_429_without_pers
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2221,7 +2268,7 @@ def test_state_memory_real_query_preflight_blocks_near_limit_before_provider_cal
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2235,7 +2282,7 @@ def test_state_memory_real_query_preflight_blocks_near_limit_before_provider_cal
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2288,7 +2335,7 @@ def test_state_memory_real_query_post_call_over_limit_records_usage_cost_and_tra
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2319,7 +2366,7 @@ def test_state_memory_real_query_post_call_over_limit_records_usage_cost_and_tra
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2385,7 +2432,7 @@ def test_state_memory_real_query_late_quota_race_keeps_success_and_accounting(tm
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2416,7 +2463,7 @@ def test_state_memory_real_query_late_quota_race_keeps_success_and_accounting(tm
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2503,7 +2550,7 @@ def test_state_memory_real_capture_late_quota_race_keeps_success_and_accounting(
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2543,7 +2590,7 @@ def test_state_memory_real_capture_late_quota_race_keeps_success_and_accounting(
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),
@@ -2635,7 +2682,7 @@ def test_state_memory_real_capture_failed_parse_near_limit_still_records_usage(t
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },
@@ -2653,7 +2700,7 @@ def test_state_memory_real_capture_failed_parse_near_limit_still_records_usage(t
 
     app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
         provider_id=config.provider_id,
-        base_url=config.base_url or "https://api.minimax.io/v1",
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
         api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
         model=config.default_model,
         transport=httpx.MockTransport(handler),

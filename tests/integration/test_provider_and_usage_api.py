@@ -76,6 +76,7 @@ def test_system_managed_default_provider_does_not_appear_in_provider_listing(tmp
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")
     monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    monkeypatch.setenv("BUDDYS_DEFAULT_TOKEN_PLAN_KEY", "sk-cp-system-default")
 
     list_response = client.get("/providers", headers={"Authorization": f"Bearer {token}"})
 
@@ -83,6 +84,7 @@ def test_system_managed_default_provider_does_not_appear_in_provider_listing(tmp
     payload = list_response.json()
     assert payload["configs"] == []
     assert "BUDDYS_DEFAULT_OPENAI_API_KEY" not in str(payload)
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" not in str(payload)
     assert "system-minimax-default" not in str(payload)
 
 
@@ -102,18 +104,18 @@ def test_provider_config_rejects_raw_key_in_env_var_field_without_echoing_it(tmp
     assert raw_key not in str(response.json())
 
 
-def test_provider_config_rejects_non_openai_api_key_env_var_for_real_provider(tmp_path) -> None:
+def test_provider_config_accepts_token_plan_env_var_for_real_provider(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")
 
     response = client.post(
         "/providers",
         headers={"Authorization": f"Bearer {token}"},
-        json=valid_provider_payload() | {"api_key_env_var": "BUDDYS_TEST_PROVIDER_KEY"},
+        json=valid_provider_payload() | {"api_key_env_var": "MINIMAX_TOKEN_PLAN_KEY"},
     )
 
-    assert response.status_code == 422
-    assert response.json() == {"detail": {"code": "invalid_provider_config"}}
+    assert response.status_code == 200
+    assert response.json()["api_key_env_var"] == "MINIMAX_TOKEN_PLAN_KEY"
 
 
 def test_provider_config_rejects_non_minimax_base_url_for_real_provider(tmp_path) -> None:
@@ -188,7 +190,7 @@ def valid_provider_payload() -> dict[str, str]:
         "provider_id": "minimax-openai",
         "display_name": "MiniMax OpenAI Compatible",
         "provider_type": "openai_compatible",
-        "base_url": "https://api.minimax.io/v1",
+        "base_url": "https://api.minimaxi.com/v1",
         "api_key_env_var": "OPENAI_API_KEY",
         "default_model": "MiniMax-M3",
     }

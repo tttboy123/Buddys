@@ -7,9 +7,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 ProviderType = Literal["mock", "openai_compatible"]
-MINIMAX_OPENAI_BASE_URL = "https://api.minimax.io/v1"
+MINIMAX_OPENAI_BASE_URL = "https://api.minimaxi.com/v1"
 SYSTEM_DEFAULT_PROVIDER_ID = "system-minimax-default"
 SYSTEM_DEFAULT_PROVIDER_ENV_VAR = "BUDDYS_DEFAULT_OPENAI_API_KEY"
+SYSTEM_DEFAULT_TOKEN_PLAN_ENV_VAR = "BUDDYS_DEFAULT_TOKEN_PLAN_KEY"
 SYSTEM_DEFAULT_MODEL_ENV_VAR = "BUDDYS_DEFAULT_MODEL"
 SYSTEM_DEFAULT_MODEL_NAME = "MiniMax-M3"
 
@@ -57,11 +58,11 @@ class ProviderConfigRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def openai_compatible_must_use_openai_api_key_env_var(self) -> "ProviderConfigRequest":
+    def openai_compatible_must_use_official_minimax_contract(self) -> "ProviderConfigRequest":
         if self.provider_type != "openai_compatible":
             return self
-        if self.api_key_env_var != "OPENAI_API_KEY":
-            raise ValueError("openai_compatible providers must use OPENAI_API_KEY")
+        if self.api_key_env_var is None:
+            raise ValueError("openai_compatible providers must reference an env var")
         if self.base_url is not None and self.base_url.rstrip("/") != MINIMAX_OPENAI_BASE_URL:
             raise ValueError("openai_compatible providers must use the MiniMax official base URL")
         return self

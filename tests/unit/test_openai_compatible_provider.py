@@ -49,7 +49,7 @@ def test_openai_compatible_provider_parses_capture_and_returns_usage(monkeypatch
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -61,7 +61,7 @@ def test_openai_compatible_provider_parses_capture_and_returns_usage(monkeypatch
     assert result.unrecognized == ["一包面粉"]
     assert result.usage.input_tokens == 12
     assert result.usage.output_tokens == 18
-    assert requests[0].url == httpx.URL("https://api.minimax.io/v1/chat/completions")
+    assert requests[0].url == httpx.URL("https://api.minimaxi.com/v1/chat/completions")
     assert requests[0].headers["Authorization"] == "Bearer sk-test-value"
 
 
@@ -70,7 +70,7 @@ def test_openai_compatible_provider_accepts_current_official_minimax_base_url(mo
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(
@@ -87,6 +87,30 @@ def test_openai_compatible_provider_accepts_current_official_minimax_base_url(mo
     result = provider.parse_state_memory_capture(source="voice", content="鸡蛋")
 
     assert result.usage.input_tokens == 1
+
+
+def test_openai_compatible_provider_accepts_token_plan_env_var_name(monkeypatch) -> None:
+    monkeypatch.setenv("MINIMAX_TOKEN_PLAN_KEY", "sk-cp-test-value")
+
+    provider = OpenAICompatibleProvider(
+        provider_id="minimax-openai",
+        base_url="https://api.minimaxi.com/v1",
+        api_key_env_var="MINIMAX_TOKEN_PLAN_KEY",
+        model="MiniMax-M3",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "{\"deltas\":[],\"unrecognized\":[\"鸡蛋\"]}"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                },
+            )
+        ),
+    )
+
+    result = provider.parse_state_memory_capture(source="voice", content="鸡蛋")
+
+    assert result.unrecognized == ["鸡蛋"]
 
 
 def test_openai_compatible_provider_sends_multimodal_photo_capture_payload(monkeypatch) -> None:
@@ -127,7 +151,7 @@ def test_openai_compatible_provider_sends_multimodal_photo_capture_payload(monke
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -177,7 +201,7 @@ def test_openai_compatible_provider_understands_recipe_query(monkeypatch) -> Non
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -219,7 +243,7 @@ def test_openai_compatible_provider_normalizes_query_alias_fields(monkeypatch) -
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -257,7 +281,7 @@ def test_openai_compatible_provider_extracts_json_from_think_and_fenced_output(m
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -305,7 +329,7 @@ def test_openai_compatible_provider_overrides_model_generated_capture_source(mon
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -352,7 +376,7 @@ def test_openai_compatible_provider_normalizes_empty_unit_to_none(monkeypatch) -
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -390,7 +414,7 @@ def test_openai_compatible_provider_normalizes_null_required_items_to_empty_list
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -412,7 +436,7 @@ def test_openai_compatible_provider_raises_typed_error_for_malformed_json(monkey
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -433,7 +457,7 @@ def test_openai_compatible_provider_malformed_json_error_keeps_usage(monkeypatch
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -456,7 +480,7 @@ def test_openai_compatible_provider_raises_typed_error_for_transport_failure(mon
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -484,7 +508,7 @@ def test_openai_compatible_provider_maps_401_to_provider_auth_failed(monkeypatch
 
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
         transport=httpx.MockTransport(handler),
@@ -501,7 +525,7 @@ def test_openai_compatible_provider_requires_non_empty_api_key_env_var(monkeypat
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     provider = OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
     )

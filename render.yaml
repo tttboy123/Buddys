@@ -8,5 +8,7 @@ services:
     envVars:
       - key: BUDDYS_DEFAULT_OPENAI_API_KEY
         sync: false
+      - key: BUDDYS_DEFAULT_TOKEN_PLAN_KEY
+        sync: false
       - key: BUDDYS_DEFAULT_MODEL
         value: MiniMax-M3

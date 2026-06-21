@@ -211,7 +211,7 @@ SERVICE_QUERY_EVAL_CASES: tuple[ServiceQueryEvalCase, ...] = (
 def real_provider() -> OpenAICompatibleProvider:
     return OpenAICompatibleProvider(
         provider_id="minimax-openai",
-        base_url="https://api.minimax.io/v1",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env_var="OPENAI_API_KEY",
         model="MiniMax-M3",
     )
@@ -271,7 +271,7 @@ def test_state_memory_real_model_service_query_eval_cases(tmp_path, case: Servic
             "provider_id": "minimax-openai",
             "display_name": "MiniMax OpenAI Compatible",
             "provider_type": "openai_compatible",
-            "base_url": "https://api.minimax.io/v1",
+            "base_url": "https://api.minimaxi.com/v1",
             "api_key_env_var": "OPENAI_API_KEY",
             "default_model": "MiniMax-M3",
         },

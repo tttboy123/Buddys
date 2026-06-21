@@ -34,6 +34,7 @@ python3 -m venv "${APP_ROOT}/.venv"
 if [[ ! -f "${ENV_FILE}" ]]; then
   cat > "${ENV_FILE}" <<'EOF'
 BUDDYS_DEFAULT_OPENAI_API_KEY=replace-with-real-key
+BUDDYS_DEFAULT_TOKEN_PLAN_KEY=
 BUDDYS_INVITE_CODE=replace-with-invite-code
 BUDDYS_DEFAULT_MODEL=MiniMax-M3
 EOF
