@@ -147,3 +147,12 @@ class DeviceRegistry:
         self._pairings_by_idempotency[pair_key] = pairing
         self._pairing_token_index[pairing_token] = pair_key
         return pairing
+
+    def require_device_pairing_token(self, device_id: str, pairing_token: str) -> DevicePairing:
+        pair_key = self._pairing_token_index.get(pairing_token)
+        if pair_key is None:
+            raise KeyError("pairing token not found")
+        pairing = self._pairings_by_idempotency[pair_key]
+        if pairing.device.device_id != device_id:
+            raise KeyError("pairing token does not match device")
+        return pairing

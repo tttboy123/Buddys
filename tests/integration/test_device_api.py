@@ -35,10 +35,12 @@ def test_pair_device_creates_device_agent_machine_and_binding() -> None:
 
 def test_heartbeat_updates_latest_device_health() -> None:
     client = make_client()
+    headers = pairing_headers()
     pair_device(client)
 
     response = client.post(
         "/devices/device_body_001/heartbeat",
+        headers=headers,
         json={
             "firmware_version": "0.1.0",
             "wifi_rssi": -55,
@@ -155,7 +157,7 @@ def test_desired_state_endpoint_returns_manual_required_state() -> None:
     client = make_client(store)
     pair_device(client)
 
-    response = client.get("/devices/device_body_001/desired-state")
+    response = client.get("/devices/device_body_001/desired-state", headers=pairing_headers())
 
     assert response.status_code == 200
     body = response.json()
@@ -242,7 +244,18 @@ def test_desired_state_endpoint_does_not_project_auth_state_memory_into_unauthen
         )
     )
 
-    response = client.get("/devices/device_body_auth_001/desired-state")
+    missing = client.get("/devices/device_body_auth_001/desired-state")
+    assert missing.status_code == 401
+    assert missing.json() == {"detail": {"code": "device_auth_required"}}
+
+    wrong = client.get(
+        "/devices/device_body_auth_001/desired-state",
+        headers=pairing_headers("wrong-token"),
+    )
+    assert wrong.status_code == 403
+    assert wrong.json() == {"detail": {"code": "device_auth_invalid"}}
+
+    response = client.get("/devices/device_body_auth_001/desired-state", headers=pairing_headers("pair-auth-device-001"))
 
     assert response.status_code == 200
     body = response.json()
@@ -344,7 +357,10 @@ def test_desired_state_endpoint_returns_only_explicitly_stored_projection_withou
     )
     assert query.status_code == 200
 
-    response = client.get("/devices/device_body_auth_explicit_001/desired-state")
+    response = client.get(
+        "/devices/device_body_auth_explicit_001/desired-state",
+        headers=pairing_headers("pair-auth-device-explicit-001"),
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -370,6 +386,7 @@ def test_device_events_accept_all_p0_button_actions_without_executing_device_act
     for event_type in ["approve", "reject", "ack", "manual_done"]:
         response = client.post(
             "/devices/device_body_001/events",
+            headers=pairing_headers(),
             json={
                 "event_type": event_type,
                 "idempotency_key": f"event-{event_type}-001",
@@ -394,10 +411,12 @@ def test_device_event_duplicate_idempotency_returns_existing_event_without_appen
 
     first = client.post(
         "/devices/device_body_001/events",
+        headers=pairing_headers(),
         json={"event_type": "approve", "idempotency_key": "event-approve-001", "payload": {"source": "button"}},
     )
     second = client.post(
         "/devices/device_body_001/events",
+        headers=pairing_headers(),
         json={"event_type": "approve", "idempotency_key": "event-approve-001", "payload": {"source": "touch"}},
     )
 
@@ -412,14 +431,31 @@ def test_device_events_reject_unpaired_device_and_secret_like_payload() -> None:
 
     unpaired = client.post(
         "/devices/missing_device/events",
+        headers=pairing_headers(),
         json={"event_type": "approve", "idempotency_key": "event-001", "payload": {"source": "button"}},
     )
     assert unpaired.status_code == 404
     assert unpaired.json() == {"detail": {"code": "device_not_found"}}
 
     pair_device(client)
+    missing_auth = client.post(
+        "/devices/device_body_001/events",
+        json={"event_type": "approve", "idempotency_key": "event-missing-auth-001", "payload": {"source": "button"}},
+    )
+    assert missing_auth.status_code == 401
+    assert missing_auth.json() == {"detail": {"code": "device_auth_required"}}
+
+    wrong_auth = client.post(
+        "/devices/device_body_001/events",
+        headers=pairing_headers("wrong-token"),
+        json={"event_type": "approve", "idempotency_key": "event-wrong-auth-001", "payload": {"source": "button"}},
+    )
+    assert wrong_auth.status_code == 403
+    assert wrong_auth.json() == {"detail": {"code": "device_auth_invalid"}}
+
     secret_payload = client.post(
         "/devices/device_body_001/events",
+        headers=pairing_headers(),
         json={
             "event_type": "approve",
             "idempotency_key": "event-secret-001",
@@ -432,6 +468,33 @@ def test_device_events_reject_unpaired_device_and_secret_like_payload() -> None:
 def test_heartbeat_rejects_invalid_ranges_and_empty_firmware_version() -> None:
     client = make_client()
     pair_device(client)
+
+    missing_auth = client.post(
+        "/devices/device_body_001/heartbeat",
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-missing-auth",
+        },
+    )
+    assert missing_auth.status_code == 401
+    assert missing_auth.json() == {"detail": {"code": "device_auth_required"}}
+
+    wrong_auth = client.post(
+        "/devices/device_body_001/heartbeat",
+        headers=pairing_headers("wrong-token"),
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-wrong-auth",
+        },
+    )
+    assert wrong_auth.status_code == 403
+    assert wrong_auth.json() == {"detail": {"code": "device_auth_invalid"}}
 
     for payload in [
         {
@@ -463,7 +526,7 @@ def test_heartbeat_rejects_invalid_ranges_and_empty_firmware_version() -> None:
             "idempotency_key": "hb-negative-uptime",
         },
     ]:
-        response = client.post("/devices/device_body_001/heartbeat", json=payload)
+        response = client.post("/devices/device_body_001/heartbeat", headers=pairing_headers(), json=payload)
         assert response.status_code == 422
 
 
@@ -473,6 +536,7 @@ def test_heartbeat_duplicate_idempotency_returns_existing_heartbeat() -> None:
 
     first = client.post(
         "/devices/device_body_001/heartbeat",
+        headers=pairing_headers(),
         json={
             "firmware_version": "0.1.0",
             "wifi_rssi": -55,
@@ -483,6 +547,7 @@ def test_heartbeat_duplicate_idempotency_returns_existing_heartbeat() -> None:
     )
     second = client.post(
         "/devices/device_body_001/heartbeat",
+        headers=pairing_headers(),
         json={
             "firmware_version": "0.1.0",
             "wifi_rssi": -10,
@@ -501,7 +566,15 @@ def test_ota_check_is_read_only_and_reports_no_update_for_p0() -> None:
     client = make_client()
     pair_device(client)
 
-    response = client.get("/devices/device_body_001/ota/check")
+    missing = client.get("/devices/device_body_001/ota/check")
+    assert missing.status_code == 401
+    assert missing.json() == {"detail": {"code": "device_auth_required"}}
+
+    wrong = client.get("/devices/device_body_001/ota/check", headers=pairing_headers("wrong-token"))
+    assert wrong.status_code == 403
+    assert wrong.json() == {"detail": {"code": "device_auth_invalid"}}
+
+    response = client.get("/devices/device_body_001/ota/check", headers=pairing_headers())
 
     assert response.status_code == 200
     assert response.json() == {
@@ -555,3 +628,7 @@ def pair_payload(
         },
         "idempotency_key": idempotency_key,
     }
+
+
+def pairing_headers(pairing_token: str = "pair-token-001") -> dict[str, str]:
+    return {"X-Buddys-Pairing-Token": pairing_token}

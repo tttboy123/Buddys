@@ -71,8 +71,16 @@ def test_pair_command_bootstraps_buddy_then_pairs_device(capsys) -> None:
 def test_cli_builds_device_endpoint_urls_without_real_http(capsys) -> None:
     calls: list[tuple[str, str, dict[str, object] | None]] = []
 
-    def fake_request(method: str, url: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
+    captured_headers: list[dict[str, str] | None] = []
+
+    def fake_request(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         calls.append((method, url, payload))
+        captured_headers.append(headers)
         if url.endswith("/desired-state"):
             return {
                 "device_id": "dev_home_001",
@@ -93,6 +101,8 @@ def test_cli_builds_device_endpoint_urls_without_real_http(capsys) -> None:
                 "http://runtime.test/root/",
                 "--idempotency-key",
                 "hb-test-001",
+                "--pairing-token",
+                "pair-token-test-001",
             ],
             request_json=fake_request,
         )
@@ -106,6 +116,8 @@ def test_cli_builds_device_endpoint_urls_without_real_http(capsys) -> None:
                 "dev_home_001",
                 "--base-url",
                 "http://runtime.test/root/",
+                "--pairing-token",
+                "pair-token-test-001",
             ],
             request_json=fake_request,
         )
@@ -123,6 +135,8 @@ def test_cli_builds_device_endpoint_urls_without_real_http(capsys) -> None:
                 "manual_done",
                 "--idempotency-key",
                 "event-test-001",
+                "--pairing-token",
+                "pair-token-test-001",
             ],
             request_json=fake_request,
         )
@@ -137,6 +151,11 @@ def test_cli_builds_device_endpoint_urls_without_real_http(capsys) -> None:
     ]
     assert calls[0][2]["current_state"] == "idle"
     assert calls[2][2]["event_type"] == "manual_done"
+    assert captured_headers == [
+        {"X-Buddys-Pairing-Token": "pair-token-test-001"},
+        {"X-Buddys-Pairing-Token": "pair-token-test-001"},
+        {"X-Buddys-Pairing-Token": "pair-token-test-001"},
+    ]
 
     output = capsys.readouterr().out
     assert '"ok": true' in output
@@ -168,7 +187,12 @@ def test_bad_event_exits_before_any_http_call() -> None:
 
 
 def test_runtime_request_errors_return_clear_cli_error(capsys) -> None:
-    def fake_request(method: str, url: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    def fake_request(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
         raise cli.RuntimeRequestError("runtime HTTP 404 device_not_found: device is not paired")
 
     exit_code = cli.main(
@@ -180,6 +204,8 @@ def test_runtime_request_errors_return_clear_cli_error(capsys) -> None:
             "http://runtime.test",
             "--idempotency-key",
             "hb-test-001",
+            "--pairing-token",
+            "pair-token-test-001",
         ],
         request_json=fake_request,
     )

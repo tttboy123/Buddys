@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Path, Request
+from fastapi import APIRouter, HTTPException, Header, Path, Request
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 from buddys_api.device_models import (
@@ -129,10 +129,16 @@ def pair_device(device_id: DeviceIdPath, request: PairDeviceRequest, fastapi_req
 
 
 @router.post("/{device_id}/heartbeat")
-def device_heartbeat(device_id: DeviceIdPath, request: DeviceHeartbeatRequest, fastapi_request: Request) -> DeviceHeartbeat:
+def device_heartbeat(
+    device_id: DeviceIdPath,
+    request: DeviceHeartbeatRequest,
+    fastapi_request: Request,
+    pairing_token: Annotated[str | None, Header(alias="X-Buddys-Pairing-Token")] = None,
+) -> DeviceHeartbeat:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
     _require_device(device_store, device_id)
+    _require_device_auth(device_store, device_id, pairing_token)
     heartbeat = DeviceHeartbeat(
         device_id=device_id,
         firmware_version=request.firmware_version,
@@ -155,18 +161,29 @@ def device_heartbeat(device_id: DeviceIdPath, request: DeviceHeartbeatRequest, f
 
 
 @router.get("/{device_id}/desired-state")
-def get_device_desired_state(device_id: DeviceIdPath, fastapi_request: Request) -> DeviceDesiredState:
+def get_device_desired_state(
+    device_id: DeviceIdPath,
+    fastapi_request: Request,
+    pairing_token: Annotated[str | None, Header(alias="X-Buddys-Pairing-Token")] = None,
+) -> DeviceDesiredState:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
     _require_device(device_store, device_id)
+    _require_device_auth(device_store, device_id, pairing_token)
     return device_store.get_desired_state(device_id)
 
 
 @router.post("/{device_id}/events", status_code=201)
-def submit_device_event(device_id: DeviceIdPath, request: DeviceEventRequest, fastapi_request: Request) -> DeviceEvent:
+def submit_device_event(
+    device_id: DeviceIdPath,
+    request: DeviceEventRequest,
+    fastapi_request: Request,
+    pairing_token: Annotated[str | None, Header(alias="X-Buddys-Pairing-Token")] = None,
+) -> DeviceEvent:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
     _require_device(device_store, device_id)
+    _require_device_auth(device_store, device_id, pairing_token)
     event = DeviceEvent(
         device_id=device_id,
         event_type=request.event_type,
@@ -187,9 +204,15 @@ def submit_device_event(device_id: DeviceIdPath, request: DeviceEventRequest, fa
 
 
 @router.get("/{device_id}/ota/check")
-def check_device_ota(device_id: DeviceIdPath, fastapi_request: Request) -> dict[str, object]:
+def check_device_ota(
+    device_id: DeviceIdPath,
+    fastapi_request: Request,
+    pairing_token: Annotated[str | None, Header(alias="X-Buddys-Pairing-Token")] = None,
+) -> dict[str, object]:
     device_id = _validate_path_id(device_id, "device_id")
-    device = _require_device(_device_store(fastapi_request), device_id)
+    device_store = _device_store(fastapi_request)
+    device = _require_device(device_store, device_id)
+    _require_device_auth(device_store, device_id, pairing_token)
     return {
         "device_id": device_id,
         "update_available": False,
@@ -218,6 +241,15 @@ def _require_device(device_store: DeviceRegistry, device_id: str) -> Device:
         return device_store.get_device(device_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "device_not_found"}) from exc
+
+
+def _require_device_auth(device_store: DeviceRegistry, device_id: str, pairing_token: str | None) -> None:
+    if pairing_token is None or not pairing_token.strip():
+        raise HTTPException(status_code=401, detail={"code": "device_auth_required"})
+    try:
+        device_store.require_device_pairing_token(device_id, pairing_token.strip())
+    except KeyError as exc:
+        raise HTTPException(status_code=403, detail={"code": "device_auth_invalid"}) from exc
 
 
 def _validate_path_id(value: str, field_name: str) -> str:

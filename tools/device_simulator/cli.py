@@ -14,7 +14,7 @@ from urllib.parse import quote
 from tools.device_simulator.state import build_device_event, build_heartbeat_payload, render_screen
 
 
-RequestJson = Callable[[str, str, dict[str, object] | None], dict[str, Any]]
+RequestJson = Callable[[str, str, dict[str, object] | None, dict[str, str] | None], dict[str, Any]]
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_AGENT_MACHINE_ENDPOINT = DEFAULT_BASE_URL
 DEFAULT_DEVICE_PUBLIC_KEY = "sim-device-public-key-placeholder"
@@ -56,15 +56,18 @@ def build_parser() -> argparse.ArgumentParser:
     heartbeat.add_argument("--uptime-ms", type=int, default=None)
     heartbeat.add_argument("--wifi-rssi", type=int, default=-55)
     heartbeat.add_argument("--idempotency-key", default=None)
+    heartbeat.add_argument("--pairing-token", required=True)
 
     poll = subparsers.add_parser("poll", help="GET /devices/{device_id}/desired-state")
     _add_common_args(poll)
+    poll.add_argument("--pairing-token", required=True)
 
     event = subparsers.add_parser("event", help="POST approve/reject/ack/manual_done device events")
     _add_common_args(event)
     event.add_argument("--type", required=True, help="approve, reject, ack, or manual_done")
     event.add_argument("--idempotency-key", default=None)
     event.add_argument("--payload-json", default="{}")
+    event.add_argument("--pairing-token", required=True)
 
     return parser
 
@@ -93,12 +96,22 @@ def main(argv: Sequence[str] | None = None, request_json: RequestJson | None = N
                 wifi_rssi=args.wifi_rssi,
                 idempotency_key=args.idempotency_key or _idempotency_key("hb"),
             )
-            response = requester("POST", _device_url(args.base_url, args.device_id, "heartbeat"), payload)
+            response = requester(
+                "POST",
+                _device_url(args.base_url, args.device_id, "heartbeat"),
+                payload,
+                _device_auth_headers(args.pairing_token),
+            )
             _print_json(response)
             return 0
 
         if args.command == "poll":
-            response = requester("GET", _device_url(args.base_url, args.device_id, "desired-state"), None)
+            response = requester(
+                "GET",
+                _device_url(args.base_url, args.device_id, "desired-state"),
+                None,
+                _device_auth_headers(args.pairing_token),
+            )
             _print_json(response)
             print(render_screen(response))
             return 0
@@ -109,7 +122,12 @@ def main(argv: Sequence[str] | None = None, request_json: RequestJson | None = N
                 idempotency_key=args.idempotency_key or _idempotency_key(f"event-{args.type}"),
                 payload=_parse_payload_json(args.payload_json),
             )
-            response = requester("POST", _device_url(args.base_url, args.device_id, "events"), payload)
+            response = requester(
+                "POST",
+                _device_url(args.base_url, args.device_id, "events"),
+                payload,
+                _device_auth_headers(args.pairing_token),
+            )
             _print_json(response)
             return 0
     except RuntimeRequestError as exc:
@@ -159,14 +177,21 @@ def _build_pair_payload(args: argparse.Namespace, buddy: dict[str, Any]) -> dict
     }
 
 
-def _request_json(method: str, url: str, payload: dict[str, object] | None = None) -> dict[str, Any]:
+def _request_json(
+    method: str,
+    url: str,
+    payload: dict[str, object] | None = None,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     data = None
-    headers = {"accept": "application/json"}
+    request_headers = {"accept": "application/json"}
+    if headers:
+        request_headers.update(headers)
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
-        headers["content-type"] = "application/json"
+        request_headers["content-type"] = "application/json"
 
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
             body = response.read()
@@ -208,6 +233,10 @@ def _required_response_text(response: dict[str, Any], field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise RuntimeRequestError(f"runtime response missing required field: {field_name}")
     return value
+
+
+def _device_auth_headers(pairing_token: str) -> dict[str, str]:
+    return {"X-Buddys-Pairing-Token": pairing_token}
 
 
 def _format_http_error(exc: urllib.error.HTTPError, method: str, url: str) -> str:

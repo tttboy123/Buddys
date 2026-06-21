@@ -9,9 +9,14 @@ def test_device_simulator_pair_heartbeat_and_event_are_visible_in_sync_events(tm
     store = DeviceRegistry()
     client = TestClient(create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3"))
 
-    def request_json(method: str, url: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    def request_json(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
         path = url.removeprefix("http://runtime.test")
-        response = client.request(method, path, json=payload)
+        response = client.request(method, path, json=payload, headers=headers)
         assert response.status_code < 400, response.text
         return response.json()
 
@@ -44,6 +49,8 @@ def test_device_simulator_pair_heartbeat_and_event_are_visible_in_sync_events(tm
                 "http://runtime.test",
                 "--idempotency-key",
                 "hb-sync-flow-001",
+                "--pairing-token",
+                "pair-token-sync-flow-001",
             ],
             request_json=request_json,
         )
@@ -61,6 +68,8 @@ def test_device_simulator_pair_heartbeat_and_event_are_visible_in_sync_events(tm
                 "manual_done",
                 "--idempotency-key",
                 "event-sync-flow-001",
+                "--pairing-token",
+                "pair-token-sync-flow-001",
                 "--payload-json",
                 '{"source":"simulator"}',
             ],

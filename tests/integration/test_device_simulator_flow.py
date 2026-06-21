@@ -11,9 +11,14 @@ def test_device_simulator_cli_pair_bootstraps_fresh_api_before_heartbeat_poll_an
     store = DeviceRegistry()
     client = TestClient(create_app(device_store=store))
 
-    def request_json(method: str, url: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    def request_json(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
         path = url.removeprefix("http://runtime.test")
-        response = client.request(method, path, json=payload)
+        response = client.request(method, path, json=payload, headers=headers)
         assert response.status_code < 400, response.text
         return response.json()
 
@@ -48,6 +53,8 @@ def test_device_simulator_cli_pair_bootstraps_fresh_api_before_heartbeat_poll_an
                 "http://runtime.test",
                 "--idempotency-key",
                 "hb-cli-flow-001",
+                "--pairing-token",
+                "pair-token-cli-flow-001",
             ],
             request_json=request_json,
         )
@@ -55,7 +62,21 @@ def test_device_simulator_cli_pair_bootstraps_fresh_api_before_heartbeat_poll_an
     )
     assert store.get_latest_heartbeat("dev_home_001").current_state == "idle"
 
-    assert cli.main(["poll", "--device-id", "dev_home_001", "--base-url", "http://runtime.test"], request_json=request_json) == 0
+    assert (
+        cli.main(
+            [
+                "poll",
+                "--device-id",
+                "dev_home_001",
+                "--base-url",
+                "http://runtime.test",
+                "--pairing-token",
+                "pair-token-cli-flow-001",
+            ],
+            request_json=request_json,
+        )
+        == 0
+    )
     assert (
         cli.main(
             [
@@ -68,6 +89,8 @@ def test_device_simulator_cli_pair_bootstraps_fresh_api_before_heartbeat_poll_an
                 "ack",
                 "--idempotency-key",
                 "event-cli-flow-001",
+                "--pairing-token",
+                "pair-token-cli-flow-001",
             ],
             request_json=request_json,
         )
@@ -91,7 +114,11 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
         wifi_rssi=-54,
         idempotency_key="hb-sim-001",
     )
-    heartbeat_response = client.post("/devices/device_body_sim_001/heartbeat", json=heartbeat_payload)
+    heartbeat_response = client.post(
+        "/devices/device_body_sim_001/heartbeat",
+        headers={"X-Buddys-Pairing-Token": "pair-token-sim-001"},
+        json=heartbeat_payload,
+    )
     assert heartbeat_response.status_code == 200
     assert heartbeat_response.json()["current_state"] == "idle"
     assert store.get_latest_heartbeat("device_body_sim_001").uptime_seconds == 42
@@ -108,7 +135,10 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
             updated_at="2024-01-01T00:00:00+00:00",
         )
     )
-    desired_response = client.get("/devices/device_body_sim_001/desired-state")
+    desired_response = client.get(
+        "/devices/device_body_sim_001/desired-state",
+        headers={"X-Buddys-Pairing-Token": "pair-token-sim-001"},
+    )
     assert desired_response.status_code == 200
 
     screen = render_screen(desired_response.json())
@@ -122,7 +152,11 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
         idempotency_key="event-manual-done-sim-001",
         payload={"source": "simulator"},
     )
-    event_response = client.post("/devices/device_body_sim_001/events", json=event_payload)
+    event_response = client.post(
+        "/devices/device_body_sim_001/events",
+        headers={"X-Buddys-Pairing-Token": "pair-token-sim-001"},
+        json=event_payload,
+    )
     assert event_response.status_code == 201
     assert event_response.json()["event_type"] == "manual_done"
     assert [event.event_type for event in store.list_events("device_body_sim_001")] == ["manual_done"]
@@ -196,7 +230,14 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_explic
             ],
         )
     )
-    desired_state = client.get("/devices/device_body_sim_001/desired-state").json()
+    missing = client.get("/devices/device_body_sim_001/desired-state")
+    assert missing.status_code == 401
+    assert missing.json() == {"detail": {"code": "device_auth_required"}}
+
+    desired_state = client.get(
+        "/devices/device_body_sim_001/desired-state",
+        headers={"X-Buddys-Pairing-Token": "pair-token-sim-auth-001"},
+    ).json()
 
     screen = render_screen(desired_state)
 
