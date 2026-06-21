@@ -6,7 +6,7 @@ from buddys_api.device_models import (
     DeviceEvent,
     DeviceHeartbeat,
 )
-from buddys_api.device_store import DeviceRegistry
+from buddys_api.device_store import DeviceRegistry, DuplicatePairingError
 
 
 def test_device_registry_saves_and_reads_device_agent_machine_and_binding() -> None:
@@ -245,3 +245,71 @@ def test_device_registry_repair_invalidates_older_pairing_token_for_same_device(
         raise AssertionError("expected old pairing token to be invalidated after re-pair")
 
     assert store.require_device_pairing_token("device_body_001", "pair-token-new") == rotated
+
+
+def test_device_registry_repair_tombstones_older_pairing_token_for_future_pair_attempts() -> None:
+    store = DeviceRegistry()
+    machine = AgentMachine(
+        agent_machine_id="agent_machine_home_mac",
+        owner_user_id="user_demo",
+        machine_type="local_mac",
+        endpoint="https://agent-machine.example.test",
+        public_key="agent-machine-public-key",
+        runtime_version="0.1.0",
+        status="online",
+    )
+    binding = BuddyRuntimeBinding(
+        buddy_id="buddy_home_001",
+        agent_machine_id="agent_machine_home_mac",
+        role="primary",
+        authority_epoch=1,
+        state_revision=0,
+    )
+    store.pair_device(
+        device=Device(
+            device_id="device_body_001",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.1.0",
+        ),
+        agent_machine=machine,
+        binding=binding,
+        pairing_token="pair-token-old",
+        idempotency_key="pair-001",
+    )
+    store.pair_device(
+        device=Device(
+            device_id="device_body_001",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0",
+        ),
+        agent_machine=machine.model_copy(update={"runtime_version": "0.2.0"}),
+        binding=binding,
+        pairing_token="pair-token-new",
+        idempotency_key="pair-002",
+    )
+
+    try:
+        store.pair_device(
+            device=Device(
+                device_id="device_body_002",
+                buddy_id="buddy_home_002",
+                space_id="space_home",
+                public_key="device-public-key-2",
+                pairing_state="paired",
+                firmware_version="0.2.0",
+            ),
+            agent_machine=machine.model_copy(update={"agent_machine_id": "agent_machine_home_mac_2"}),
+            binding=binding.model_copy(update={"buddy_id": "buddy_home_002", "agent_machine_id": "agent_machine_home_mac_2"}),
+            pairing_token="pair-token-old",
+            idempotency_key="pair-003",
+        )
+    except DuplicatePairingError:
+        pass
+    else:
+        raise AssertionError("expected revoked pairing token to remain unusable for future pair attempts")

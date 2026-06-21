@@ -37,6 +37,7 @@ class DeviceRegistry:
         self._events_by_idempotency: dict[tuple[str, str], DeviceEvent] = {}
         self._pairings_by_idempotency: dict[tuple[str, str], DevicePairing] = {}
         self._pairing_token_index: dict[str, tuple[str, str]] = {}
+        self._revoked_pairing_tokens: set[str] = set()
 
     def save_device(self, device: Device) -> Device:
         self._devices[device.device_id] = device
@@ -131,7 +132,7 @@ class DeviceRegistry:
             return self._pairings_by_idempotency[pair_key]
 
         existing_pair_key = self._pairing_token_index.get(pairing_token)
-        if existing_pair_key is not None:
+        if existing_pair_key is not None or pairing_token in self._revoked_pairing_tokens:
             raise DuplicatePairingError("pairing token has already been used")
 
         self._invalidate_pairing_tokens_for_device(device.device_id)
@@ -167,3 +168,4 @@ class DeviceRegistry:
         ]
         for pairing_token in stale_tokens:
             del self._pairing_token_index[pairing_token]
+            self._revoked_pairing_tokens.add(pairing_token)

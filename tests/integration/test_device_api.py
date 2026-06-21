@@ -171,6 +171,18 @@ def test_repair_rotates_device_auth_and_invalidates_older_pairing_token() -> Non
     )
     assert new_token.status_code == 200
 
+    reused = client.post(
+        "/devices/device_body_002/pair",
+        json=pair_payload(
+            buddy,
+            idempotency_key="pair-003",
+            pairing_token="pair-token-old",
+            agent_machine_id="agent_machine_home_mac_2",
+        ),
+    )
+    assert reused.status_code == 409
+    assert reused.json() == {"detail": {"code": "pairing_token_already_used"}}
+
 
 def test_desired_state_endpoint_returns_manual_required_state() -> None:
     store = DeviceRegistry()
@@ -299,6 +311,40 @@ def test_desired_state_endpoint_does_not_project_auth_state_memory_into_unauthen
     assert "api_key" not in serialized
     assert "capabilities" not in serialized
     assert "token" not in serialized
+
+
+def test_post_pair_endpoints_do_not_leak_device_existence_without_valid_auth() -> None:
+    client = make_client()
+    pair_device(client)
+
+    existing_missing_auth = client.get("/devices/device_body_001/desired-state")
+    missing_missing_auth = client.get("/devices/missing_device/desired-state")
+    assert existing_missing_auth.status_code == 401
+    assert missing_missing_auth.status_code == 401
+    assert existing_missing_auth.json() == {"detail": {"code": "device_auth_required"}}
+    assert missing_missing_auth.json() == {"detail": {"code": "device_auth_required"}}
+
+    existing_wrong_auth = client.post(
+        "/devices/device_body_001/events",
+        headers=pairing_headers("wrong-token"),
+        json={"event_type": "approve", "idempotency_key": "event-existing-wrong-auth", "payload": {"source": "button"}},
+    )
+    missing_wrong_auth = client.post(
+        "/devices/missing_device/events",
+        headers=pairing_headers("wrong-token"),
+        json={"event_type": "approve", "idempotency_key": "event-missing-wrong-auth", "payload": {"source": "button"}},
+    )
+    assert existing_wrong_auth.status_code == 403
+    assert missing_wrong_auth.status_code == 403
+    assert existing_wrong_auth.json() == {"detail": {"code": "device_auth_invalid"}}
+    assert missing_wrong_auth.json() == {"detail": {"code": "device_auth_invalid"}}
+
+    existing_ota_missing_auth = client.get("/devices/device_body_001/ota/check")
+    missing_ota_missing_auth = client.get("/devices/missing_device/ota/check")
+    assert existing_ota_missing_auth.status_code == 401
+    assert missing_ota_missing_auth.status_code == 401
+    assert existing_ota_missing_auth.json() == {"detail": {"code": "device_auth_required"}}
+    assert missing_ota_missing_auth.json() == {"detail": {"code": "device_auth_required"}}
 
 
 def test_desired_state_endpoint_returns_only_explicitly_stored_projection_without_live_overlay(tmp_path) -> None:
@@ -457,7 +503,7 @@ def test_device_event_duplicate_idempotency_returns_existing_event_without_appen
     assert len(store.list_events("device_body_001")) == 1
 
 
-def test_device_events_reject_unpaired_device_and_secret_like_payload() -> None:
+def test_device_events_reject_invalid_auth_and_secret_like_payload() -> None:
     client = make_client()
 
     unpaired = client.post(
@@ -465,8 +511,8 @@ def test_device_events_reject_unpaired_device_and_secret_like_payload() -> None:
         headers=pairing_headers(),
         json={"event_type": "approve", "idempotency_key": "event-001", "payload": {"source": "button"}},
     )
-    assert unpaired.status_code == 404
-    assert unpaired.json() == {"detail": {"code": "device_not_found"}}
+    assert unpaired.status_code == 403
+    assert unpaired.json() == {"detail": {"code": "device_auth_invalid"}}
 
     pair_device(client)
     missing_auth = client.post(
@@ -642,6 +688,7 @@ def pair_payload(
     owner_user_id: str = "user_demo",
     idempotency_key: str = "pair-001",
     pairing_token: str = "pair-token-001",
+    agent_machine_id: str = "agent_machine_home_mac",
 ) -> dict[str, object]:
     return {
         "buddy_id": buddy["buddy_id"],
@@ -650,7 +697,7 @@ def pair_payload(
         "firmware_version": "0.1.0",
         "pairing_token": pairing_token,
         "agent_machine": {
-            "agent_machine_id": "agent_machine_home_mac",
+            "agent_machine_id": agent_machine_id,
             "owner_user_id": owner_user_id,
             "machine_type": "local_mac",
             "endpoint": "https://agent-machine.example.test",

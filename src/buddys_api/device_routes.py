@@ -18,7 +18,7 @@ from buddys_api.device_models import (
     WifiRssi,
     validate_device_event_payload,
 )
-from buddys_api.device_store import DeviceRegistry, DuplicatePairingError
+from buddys_api.device_store import DevicePairing, DeviceRegistry, DuplicatePairingError
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import Buddy
 
@@ -137,7 +137,6 @@ def device_heartbeat(
 ) -> DeviceHeartbeat:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
-    _require_device(device_store, device_id)
     _require_device_auth(device_store, device_id, pairing_token)
     heartbeat = DeviceHeartbeat(
         device_id=device_id,
@@ -168,7 +167,6 @@ def get_device_desired_state(
 ) -> DeviceDesiredState:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
-    _require_device(device_store, device_id)
     _require_device_auth(device_store, device_id, pairing_token)
     return device_store.get_desired_state(device_id)
 
@@ -182,7 +180,6 @@ def submit_device_event(
 ) -> DeviceEvent:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
-    _require_device(device_store, device_id)
     _require_device_auth(device_store, device_id, pairing_token)
     event = DeviceEvent(
         device_id=device_id,
@@ -211,12 +208,11 @@ def check_device_ota(
 ) -> dict[str, object]:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
-    device = _require_device(device_store, device_id)
-    _require_device_auth(device_store, device_id, pairing_token)
+    pairing = _require_device_auth(device_store, device_id, pairing_token)
     return {
         "device_id": device_id,
         "update_available": False,
-        "current_version": device.firmware_version,
+        "current_version": pairing.device.firmware_version,
         "target_version": None,
     }
 
@@ -243,11 +239,11 @@ def _require_device(device_store: DeviceRegistry, device_id: str) -> Device:
         raise HTTPException(status_code=404, detail={"code": "device_not_found"}) from exc
 
 
-def _require_device_auth(device_store: DeviceRegistry, device_id: str, pairing_token: str | None) -> None:
+def _require_device_auth(device_store: DeviceRegistry, device_id: str, pairing_token: str | None) -> DevicePairing:
     if pairing_token is None or not pairing_token.strip():
         raise HTTPException(status_code=401, detail={"code": "device_auth_required"})
     try:
-        device_store.require_device_pairing_token(device_id, pairing_token.strip())
+        return device_store.require_device_pairing_token(device_id, pairing_token.strip())
     except KeyError as exc:
         raise HTTPException(status_code=403, detail={"code": "device_auth_invalid"}) from exc
 
