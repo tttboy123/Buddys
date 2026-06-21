@@ -9,6 +9,7 @@ from typing import Any
 from buddys_api.buddy_store import BuddyStore
 from buddys_api.device_store import DeviceRegistry
 from buddys_api.schemas import CostEvent, new_id, now_iso
+from buddys_api.state_memory_store import is_recent_consumption_timestamp
 from buddys_api.sync_models import SyncEvent, SyncVisibility
 
 
@@ -346,15 +347,10 @@ def _state_memory_projection(
         items_by_buddy_models[buddy.buddy_id] = items
         pending_by_buddy_models[buddy.buddy_id] = pending
         history_by_buddy_models[buddy.buddy_id] = history
-        summary_by_buddy[buddy.buddy_id] = {
-            "confirmed_item_count": len(items),
-            "pending_proposal_count": len(pending),
-            "last_state_change_at": _latest_timestamp(
-                [item.updated_at for item in items]
-                + [proposal.updated_at for proposal in pending]
-                + [entry.created_at for entry in history]
-            ),
-        }
+        summary_by_buddy[buddy.buddy_id] = state_memory_store.summarize_buddy_state(
+            user_id=user_id,
+            buddy_id=buddy.buddy_id,
+        )
 
     latest_queries_by_buddy = _latest_state_memory_queries_by_buddy(
         traces=traces,
@@ -374,10 +370,17 @@ def _state_memory_projection(
         "summary_by_buddy": {
             buddy_id: summary
             for buddy_id, summary in summary_by_buddy.items()
-            if summary["confirmed_item_count"] or summary["pending_proposal_count"]
+            if (
+                summary["confirmed_item_count"]
+                or summary["pending_proposal_count"]
+                or summary["recently_consumed_count"]
+            )
         },
         "latest_query_by_buddy": latest_queries_by_buddy,
-        "proactive_hint_by_buddy": _proactive_state_memory_hints_by_buddy(items_by_buddy_models),
+        "proactive_hint_by_buddy": _proactive_state_memory_hints_by_buddy(
+            items_by_buddy=items_by_buddy_models,
+            history_by_buddy=history_by_buddy_models,
+        ),
         "recent_activity_by_buddy": _recent_state_memory_activity_by_buddy(
             history_by_buddy=history_by_buddy_models,
             pending_by_buddy=pending_by_buddy_models,
@@ -451,10 +454,18 @@ def _state_memory_evidence_summary(item: Any) -> dict[str, Any]:
     }
 
 
-def _proactive_state_memory_hints_by_buddy(items_by_buddy: dict[str, list[Any]]) -> dict[str, dict[str, Any]]:
+def _proactive_state_memory_hints_by_buddy(
+    *,
+    items_by_buddy: dict[str, list[Any]],
+    history_by_buddy: dict[str, list[Any]],
+) -> dict[str, dict[str, Any]]:
     hints: dict[str, dict[str, Any]] = {}
-    for buddy_id, items in items_by_buddy.items():
-        hint = _build_state_memory_hint(items)
+    buddy_ids = set(items_by_buddy) | set(history_by_buddy)
+    for buddy_id in buddy_ids:
+        hint = _build_state_memory_hint(
+            items=items_by_buddy.get(buddy_id, []),
+            history=history_by_buddy.get(buddy_id, []),
+        )
         if hint is not None:
             hints[buddy_id] = hint
     return hints
@@ -519,7 +530,28 @@ def _recent_state_memory_activity_by_buddy(
     return activity_by_buddy
 
 
-def _build_state_memory_hint(items: list[Any]) -> dict[str, Any] | None:
+def _build_state_memory_hint(*, items: list[Any], history: list[Any]) -> dict[str, Any] | None:
+    recent_consumption = [
+        entry
+        for entry in history
+        if entry.change_type in {"consume", "consumed"}
+        and is_recent_consumption_timestamp(entry.created_at)
+    ]
+    if recent_consumption:
+        recent_consumption.sort(key=lambda entry: (entry.created_at, entry.history_id))
+        entry = recent_consumption[-1]
+        matching_item = next((item for item in items if item.item_id == entry.item_id), None)
+        return {
+            "kind": "consumption_inference",
+            "message": f"Buddy noticed {entry.item_name} was used recently. Want to review whether it needs a refill?",
+            "basis": {
+                "item_ids": [entry.item_id],
+                "item_names": [entry.item_name],
+                "recent_change_type": entry.change_type,
+                "last_seen_at": matching_item.last_seen_at if matching_item is not None else None,
+            },
+        }
+
     low_items = [
         item
         for item in items

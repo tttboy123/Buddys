@@ -1,4 +1,5 @@
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
@@ -63,6 +64,27 @@ def test_authenticate_token_and_logout_revokes_session() -> None:
     store.logout(login.access_token)
 
     assert store.authenticate_token(login.access_token) is None
+
+
+def test_authenticate_token_and_logout_ignore_null_token_hash_rows() -> None:
+    store = make_store()
+    store.connection = SimpleNamespace(
+        execute=lambda *_args, **_kwargs: SimpleNamespace(
+            fetchall=lambda: [
+                {
+                    "session_id": "sess_legacy_null_hash",
+                    "token_hash": None,
+                    "user_id": "user_legacy",
+                    "email": "legacy@example.com",
+                    "display_name": None,
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                }
+            ]
+        )
+    )
+
+    assert store.authenticate_token("stale-browser-token") is None
+    assert store.logout("stale-browser-token") is False
 
 
 def test_database_file_persists_users_and_sessions(tmp_path) -> None:

@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timedelta, timezone
 
 from buddys_api.auth_store import AuthStore
 from buddys_api.buddy_store import BuddyStore
@@ -367,3 +368,86 @@ def test_consume_or_remove_nonexistent_item_does_not_create_phantom_records() ->
     assert remove_result.applied_delta_count == 0
     assert store.list_items(user_id=owner_id, buddy_id=buddy_id) == []
     assert store.list_history(user_id=owner_id, buddy_id=buddy_id) == []
+
+
+def test_summarize_buddy_state_tracks_recent_consumption_and_unknown_quantities() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="voice",
+            content="我买了五个鸡蛋",
+            deltas=[StateMemoryDelta(item_name="鸡蛋", operation="upsert", quantity=5, unit="个", source="voice")],
+        ).proposal_id,
+    )
+    store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="conversation",
+            content="我买了牛奶",
+            deltas=[StateMemoryDelta(item_name="牛奶", operation="upsert", source="conversation")],
+        ).proposal_id,
+    )
+    store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="inference",
+            content="我用了2个鸡蛋",
+            deltas=[StateMemoryDelta(item_name="鸡蛋", operation="consume", quantity=2, unit="个", source="inference")],
+        ).proposal_id,
+    )
+
+    summary = store.summarize_buddy_state(user_id=owner_id, buddy_id=buddy_id)
+
+    assert summary["confirmed_item_count"] == 2
+    assert summary["pending_proposal_count"] == 0
+    assert summary["recently_consumed_count"] == 1
+    assert summary["unknown_quantity_count"] == 1
+    assert summary["last_state_change_at"]
+
+
+def test_summarize_buddy_state_excludes_stale_consumption_from_recent_count() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="voice",
+            content="我买了五个鸡蛋",
+            deltas=[StateMemoryDelta(item_name="鸡蛋", operation="upsert", quantity=5, unit="个", source="voice")],
+        ).proposal_id,
+    )
+    store.confirm_proposal(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        proposal_id=store.save_pending_proposal(
+            user_id=owner_id,
+            buddy_id=buddy_id,
+            source="inference",
+            content="我用了2个鸡蛋",
+            deltas=[StateMemoryDelta(item_name="鸡蛋", operation="consume", quantity=2, unit="个", source="inference")],
+        ).proposal_id,
+    )
+    stale_time = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    store.connection.execute(
+        "UPDATE state_memory_history SET created_at = ? WHERE buddy_id = ? AND change_type = 'consume'",
+        (stale_time, buddy_id),
+    )
+    store.connection.commit()
+
+    summary = store.summarize_buddy_state(user_id=owner_id, buddy_id=buddy_id)
+
+    assert summary["recently_consumed_count"] == 0

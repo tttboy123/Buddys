@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from datetime import datetime, timedelta, timezone
 
 from buddys_api.main import create_app
 from buddys_api.providers.openai_compatible_provider import ProviderUsage, StateMemoryQueryUnderstanding
@@ -195,3 +196,111 @@ def test_sync_snapshot_projects_photo_evidence_details_for_auth_workspace(tmp_pa
     assert any(activity["kind"] == "query_answered" for activity in recent_activity)
     assert "api_key" not in str(recent_activity).lower()
     assert "capabilities" not in str(recent_activity).lower()
+
+
+def test_sync_snapshot_uses_recent_consumption_history_for_hint_and_summary(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "consume-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了鸡蛋"},
+    )
+    assert capture.status_code == 201
+    capture_proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm_capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{capture_proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm_capture.status_code == 200
+
+    consume = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/inference",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我用了鸡蛋"},
+    )
+    assert consume.status_code == 201
+    consume_proposal_id = consume.json()["proposal"]["proposal_id"]
+    confirm_consume = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{consume_proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm_consume.status_code == 200
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    state_memory = snapshot["state_memory"]
+    summary = state_memory["summary_by_buddy"][buddy["buddy_id"]]
+    item = state_memory["items_by_buddy"][buddy["buddy_id"]][0]
+    hint = state_memory["proactive_hint_by_buddy"][buddy["buddy_id"]]
+
+    assert item["name"] == "鸡蛋"
+    assert item["quantity"] in {None, 0, 0.0}
+    assert summary["recently_consumed_count"] == 1
+    assert hint["kind"] == "consumption_inference"
+    assert hint["basis"]["item_names"] == ["鸡蛋"]
+    assert hint["basis"]["recent_change_type"] == "consume"
+
+
+def test_sync_snapshot_stale_consumption_does_not_override_low_stock_hint(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "stale-consume-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=1,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="牛奶",
+        category="ingredient",
+        quantity=5,
+        unit="盒",
+        source="manual",
+        confidence=1.0,
+    )
+    app.state.state_memory_store.confirm_proposal(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        proposal_id=app.state.state_memory_store.save_pending_proposal(
+            user_id=buddy["user_id"],
+            buddy_id=buddy["buddy_id"],
+            source="inference",
+            content="我用了牛奶",
+            deltas=[StateMemoryDelta(item_name="牛奶", operation="consume", quantity=1, unit="盒", source="inference")],
+        ).proposal_id,
+    )
+    stale_time = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    app.state.db.execute(
+        "UPDATE state_memory_history SET created_at = ? WHERE buddy_id = ? AND item_name = '牛奶' AND change_type = 'consume'",
+        (stale_time, buddy["buddy_id"]),
+    )
+    app.state.db.commit()
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    summary = snapshot["state_memory"]["summary_by_buddy"][buddy["buddy_id"]]
+    hint = snapshot["state_memory"]["proactive_hint_by_buddy"][buddy["buddy_id"]]
+
+    assert summary["recently_consumed_count"] == 0
+    assert hint["kind"] == "consumption_inference"
+    assert hint["basis"]["item_names"] == ["鸡蛋"]
+    assert "recent_change_type" not in hint["basis"]

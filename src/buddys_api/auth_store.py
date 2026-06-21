@@ -86,7 +86,7 @@ class AuthStore:
             """
         ).fetchall()
         for row in rows:
-            if secrets.compare_digest(token_hash, row["token_hash"]):
+            if _matches_session_token_hash(token_hash, row["token_hash"]):
                 return _user_from_row(row)
         return None
 
@@ -96,7 +96,7 @@ class AuthStore:
             "SELECT session_id, token_hash FROM sessions WHERE revoked_at IS NULL"
         ).fetchall()
         for row in rows:
-            if secrets.compare_digest(token_hash, row["token_hash"]):
+            if _matches_session_token_hash(token_hash, row["token_hash"]):
                 with self.connection:
                     self.connection.execute(
                         "UPDATE sessions SET revoked_at = ? WHERE session_id = ?",
@@ -129,6 +129,12 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
 def hash_session_token(access_token: str) -> str:
     return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+
+
+def _matches_session_token_hash(expected_hash: str, stored_hash: object) -> bool:
+    if not isinstance(stored_hash, str) or not stored_hash:
+        return False
+    return secrets.compare_digest(expected_hash, stored_hash)
 
 
 def _normalize_email(email: str) -> str:

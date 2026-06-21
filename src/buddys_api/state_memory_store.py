@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 from buddys_api.schemas import new_id, now_iso
 from buddys_api.state_memory_models import (
@@ -11,6 +12,8 @@ from buddys_api.state_memory_models import (
     StateMemoryProposalApplyResult,
     StateMemoryPendingProposal,
 )
+
+RECENT_CONSUMPTION_WINDOW = timedelta(days=3)
 
 
 class StateMemoryStore:
@@ -112,6 +115,28 @@ class StateMemoryStore:
             (user_id, buddy_id),
         ).fetchall()
         return [_history_from_row(row) for row in rows]
+
+    def summarize_buddy_state(self, *, user_id: str, buddy_id: str) -> dict[str, object]:
+        items = self.list_items(user_id=user_id, buddy_id=buddy_id)
+        pending = self.list_pending_proposals(user_id=user_id, buddy_id=buddy_id)
+        history = self.list_history(user_id=user_id, buddy_id=buddy_id)
+        recently_consumed_item_ids = {
+            entry.item_id
+            for entry in history
+            if entry.change_type in {"consume", "consumed"}
+            and is_recent_consumption_timestamp(entry.created_at)
+        }
+        return {
+            "confirmed_item_count": len(items),
+            "pending_proposal_count": len(pending),
+            "recently_consumed_count": len(recently_consumed_item_ids),
+            "unknown_quantity_count": sum(1 for item in items if item.quantity is None),
+            "last_state_change_at": _latest_timestamp(
+                [item.updated_at for item in items]
+                + [proposal.updated_at for proposal in pending]
+                + [entry.created_at for entry in history]
+            ),
+        }
 
     def save_pending_proposal(
         self,
@@ -603,3 +628,13 @@ def _status_after(
     if current_status == "removed" and delta.operation == "upsert":
         return "active"
     return "active"
+
+
+def _latest_timestamp(timestamps: list[str]) -> str | None:
+    return max(timestamps) if timestamps else None
+
+
+def is_recent_consumption_timestamp(value: str, *, now: datetime | None = None) -> bool:
+    reference = now or datetime.now(timezone.utc)
+    timestamp = datetime.fromisoformat(value)
+    return timestamp >= reference - RECENT_CONSUMPTION_WINDOW

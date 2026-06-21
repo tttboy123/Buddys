@@ -71,10 +71,16 @@ async function requestJson(url, options = {}) {
   const payload = text ? safeJson(text) : null;
   if (!response.ok) {
     const detailCode = payload?.detail?.code;
+    if (response.status === 401 && detailCode === "invalid_or_expired_token") {
+      await recoverExpiredSession();
+    }
     const detailText = payload?.detail?.message || detailCode || payload?.detail;
     const error = new Error(detailText || `${response.status} ${url}`);
     error.status = response.status;
     error.payload = payload;
+    if (response.status === 401 && detailCode === "invalid_or_expired_token") {
+      error.recoveredSessionExpired = true;
+    }
     throw error;
   }
   return payload;
@@ -182,6 +188,16 @@ function clearSession() {
   $("authDisplayNameInput").value = "";
   $("authInviteCodeInput").value = "";
   renderExperienceShell();
+}
+
+async function recoverExpiredSession() {
+  clearSession();
+  setAuthStatus("Stored session expired. Please login again.", "error");
+  await loadSyncSnapshot();
+}
+
+function isRecoveredSessionExpiry(error) {
+  return Boolean(error?.recoveredSessionExpired);
 }
 
 function syncAuthControls() {
@@ -656,6 +672,9 @@ async function restoreSession() {
     setAuthStatus(`Signed in as ${state.auth.user.email}`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     clearSession();
     setAuthStatus("Stored session expired. Please login again.", "error");
     await loadSyncSnapshot();
@@ -766,6 +785,9 @@ async function createMyBuddy() {
     setAuthStatus(`Buddy created for ${state.auth.user.email}`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setAuthStatus(`Create Buddy failed: ${error.message}`, "error");
   }
 }
@@ -849,6 +871,9 @@ async function submitCapture() {
     setWorkspaceStatus(`Capture saved as pending proposal: ${response.proposal.content}`);
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Capture failed: ${error.message}`);
   }
 }
@@ -873,6 +898,9 @@ async function submitPhotoCapture() {
     setWorkspaceStatus(`Photo saved as pending proposal: ${response.proposal.content}`);
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Photo capture failed: ${error.message}`);
   }
 }
@@ -899,6 +927,9 @@ async function submitVoiceTranscript() {
     setWorkspaceStatus(`Reviewed transcript saved as pending note: ${response.proposal.content}`);
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Transcript save failed: ${error.message}`);
   }
 }
@@ -922,6 +953,9 @@ async function submitQuery() {
     setWorkspaceStatus(`Query answered: ${answer.summary}`);
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Query failed: ${error.message}`);
   }
 }
@@ -939,6 +973,9 @@ async function confirmProposal(proposalId) {
     setWorkspaceStatus("Proposal confirmed.");
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Confirm failed: ${error.message}`);
   }
 }
@@ -956,6 +993,9 @@ async function rejectProposal(proposalId) {
     setWorkspaceStatus("Proposal rejected.");
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Reject failed: ${error.message}`);
   }
 }
@@ -983,6 +1023,9 @@ async function submitCorrection() {
     setWorkspaceStatus("Correction applied.");
     await loadSyncSnapshot();
   } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
     setWorkspaceStatus(`Correction failed: ${error.message}`);
   }
 }

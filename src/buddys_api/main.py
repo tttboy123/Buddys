@@ -20,6 +20,8 @@ from buddys_api.buddy_store import BuddyStore
 from buddys_api.db import connect_db, initialize_database
 from buddys_api.device_routes import router as device_router
 from buddys_api.device_store import DeviceRegistry
+from buddys_api.engagement_metrics_routes import router as engagement_metrics_router
+from buddys_api.engagement_metrics_store import EngagementMetricsStore
 from buddys_api.provider_routes import router as provider_router
 from buddys_api.provider_store import ProviderStore
 from buddys_api.runtime import BuddysRuntime
@@ -75,6 +77,7 @@ def create_app(
     app.state.usage_store = UsageStore(connection)
     app.state.agent_store = AgentStore(connection)
     app.state.state_memory_store = StateMemoryStore(connection)
+    app.state.engagement_metrics_store = EngagementMetricsStore(connection)
     app.state.runtime = runtime or _runtime_from_env(app.state.buddy_store)
     if runtime is not None and runtime.buddy_store is None:
         runtime.buddy_store = app.state.buddy_store
@@ -90,6 +93,7 @@ def create_app(
         buddy_store=app.state.buddy_store,
         provider_store=app.state.provider_store,
         usage_store=app.state.usage_store,
+        engagement_metrics_store=app.state.engagement_metrics_store,
     )
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(auth_router)
@@ -97,6 +101,7 @@ def create_app(
     app.include_router(sync_router)
     app.include_router(provider_router)
     app.include_router(agent_router)
+    app.include_router(engagement_metrics_router)
     app.include_router(state_memory_router)
 
     @app.get("/healthz")

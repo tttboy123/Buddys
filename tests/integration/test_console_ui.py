@@ -200,6 +200,21 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "Registered ${result.user.email}" not in register_auth_body
 
 
+def test_console_assets_clear_stale_session_when_protected_api_returns_invalid_or_expired_token() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    request_json_body = extract_function_body(script, "requestJson")
+    recover_expired_session_body = extract_function_body(script, "recoverExpiredSession")
+
+    assert 'response.status === 401' in request_json_body
+    assert 'detailCode === "invalid_or_expired_token"' in request_json_body
+    assert "await recoverExpiredSession();" in request_json_body
+    assert "clearSession();" in recover_expired_session_body
+    assert 'setAuthStatus("Stored session expired. Please login again.", "error");' in recover_expired_session_body
+    assert "await loadSyncSnapshot();" in recover_expired_session_body
+
+
 def test_console_route_bootstraps_invite_required_flag_from_env(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("BUDDYS_INVITE_CODE", "letmein")
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))

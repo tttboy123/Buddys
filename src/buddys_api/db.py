@@ -230,6 +230,29 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_state_memory_pending_owner
             ON state_memory_pending_proposals(user_id, buddy_id, status, created_at);
+
+        CREATE TABLE IF NOT EXISTS engagement_events (
+            event_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            event_type TEXT NOT NULL CHECK (event_type IN (
+                'capture_submitted',
+                'proposal_confirmed',
+                'proposal_corrected',
+                'query_answered'
+            )),
+            capture_source TEXT,
+            answer_type TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            FOREIGN KEY (buddy_id) REFERENCES buddies(buddy_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_events_user_created
+            ON engagement_events(user_id, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_engagement_events_type_created
+            ON engagement_events(event_type, created_at);
         """
     )
     buddy_columns = {

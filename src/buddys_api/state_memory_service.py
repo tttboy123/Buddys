@@ -5,6 +5,7 @@ import re
 
 from buddys_api.buddy_store import BuddyStore
 from buddys_api.cost_meter import CostMeter
+from buddys_api.engagement_metrics_store import EngagementMetricsStore
 from buddys_api.provider_models import (
     MINIMAX_OPENAI_BASE_URL,
     SYSTEM_DEFAULT_MODEL_ENV_VAR,
@@ -72,6 +73,7 @@ class StateMemoryService:
         provider_store: ProviderStore | None = None,
         usage_store: UsageStore | None = None,
         provider_factory: object | None = None,
+        engagement_metrics_store: EngagementMetricsStore | None = None,
     ) -> None:
         self.store = store
         self.sync_store = sync_store
@@ -82,6 +84,7 @@ class StateMemoryService:
         self.provider_store = provider_store
         self.usage_store = usage_store
         self.provider_factory = provider_factory
+        self.engagement_metrics_store = engagement_metrics_store
 
     def create_capture_proposal(
         self,
@@ -171,6 +174,12 @@ class StateMemoryService:
                 "item_names": [delta.item_name for delta in proposal.deltas],
             },
         )
+        self._record_engagement_event(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            event_type="capture_submitted",
+            capture_source=str(source),
+        )
         return proposal, sync_event.revision
 
     def confirm_proposal(
@@ -194,6 +203,11 @@ class StateMemoryService:
                 "applied_delta_count": result.applied_delta_count,
                 "item_ids": [item.item_id for item in result.items],
             },
+        )
+        self._record_engagement_event(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            event_type="proposal_confirmed",
         )
         return result, sync_event.revision
 
@@ -247,6 +261,11 @@ class StateMemoryService:
                 "applied_delta_count": result.applied_delta_count,
                 "item_ids": [item.item_id for item in result.items],
             },
+        )
+        self._record_engagement_event(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            event_type="proposal_corrected",
         )
         return result, sync_event.revision
 
@@ -319,9 +338,34 @@ class StateMemoryService:
             provider=provider,
             usage=understanding.usage if understanding is not None else None,
         )
+        self._record_engagement_event(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            event_type="query_answered",
+            answer_type=answer.answer_type,
+        )
         payload = answer.model_dump(mode="json")
         payload["trace_id"] = trace_id
         return StateMemoryQueryAnswer.model_validate(payload)
+
+    def _record_engagement_event(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        event_type: str,
+        capture_source: str | None = None,
+        answer_type: str | None = None,
+    ) -> None:
+        if self.engagement_metrics_store is None:
+            return
+        self.engagement_metrics_store.record_event(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            event_type=event_type,
+            capture_source=capture_source,
+            answer_type=answer_type,
+        )
 
     def _parse_capture(
         self,

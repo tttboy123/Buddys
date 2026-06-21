@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
 
 from buddys_api.main import create_app
 
@@ -186,6 +187,30 @@ def test_sync_snapshot_and_events_do_not_leak_auth_owned_buddies_to_unauthentica
     assert [event["event_type"] for event in owner_events] == ["buddy.created"]
     assert owner_events[0]["entity_id"] == private_buddy["buddy_id"]
     assert legacy_buddy["buddy_id"] not in str(owner_events)
+
+
+def test_sync_snapshot_with_null_session_token_hash_degrades_to_401_not_500(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    app.state.auth_store.connection = SimpleNamespace(
+        execute=lambda *_args, **_kwargs: SimpleNamespace(
+            fetchall=lambda: [
+                {
+                    "session_id": "sess_legacy_null_hash",
+                    "token_hash": None,
+                    "user_id": "user_legacy",
+                    "email": "legacy@example.com",
+                    "display_name": None,
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                }
+            ]
+        )
+    )
+
+    response = client.get("/sync/snapshot", headers={"Authorization": "Bearer stale-browser-token"})
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": {"code": "invalid_or_expired_token"}}
 
 
 def test_sync_snapshot_includes_owner_agents_but_not_for_unauthenticated_or_other_users(tmp_path) -> None:

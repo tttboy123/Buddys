@@ -576,6 +576,129 @@ def test_state_memory_duplicate_reject_returns_409_without_mutating_state_twice(
     assert history.json() == {"history": []}
 
 
+def test_state_memory_confirmed_consume_reduces_known_quantity_and_records_history_via_api(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "consume-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了五个鸡蛋"},
+    )
+    assert capture.status_code == 201
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+
+    consume = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/inference",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我用了2个鸡蛋"},
+    )
+    assert consume.status_code == 201
+    consume_proposal_id = consume.json()["proposal"]["proposal_id"]
+    consume_confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{consume_proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    items = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/items",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["items"]
+    history = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/history",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()["history"]
+
+    assert consume_confirm.status_code == 200
+    assert [(item["name"], item["quantity"], item["status"]) for item in items] == [("鸡蛋", 3.0, "active")]
+    assert history[-1]["change_type"] == "consume"
+    assert history[-1]["quantity_before"] == 5.0
+    assert history[-1]["quantity_after"] == 3.0
+
+
+def test_state_memory_actions_record_safe_engagement_metrics(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "metrics-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/voice",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了五个鸡蛋"},
+    )
+    assert capture.status_code == 201
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+
+    metrics = client.get("/metrics/engagement", headers={"Authorization": f"Bearer {token}"})
+
+    assert metrics.status_code == 200
+    body = metrics.json()
+    assert body["activation"]["completed_first_capture_confirm_query"] is True
+    assert body["capture_by_source"]["voice"] == 1
+    assert body["query_by_answer_type"]["have_item"] == 1
+    assert "我买了五个鸡蛋" not in str(body)
+    assert "有鸡蛋吗" not in str(body)
+
+
+def test_state_memory_activation_requires_ordered_capture_confirm_query_cycle(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "unordered-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="query_answered",
+        answer_type="have_item",
+    )
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="capture_submitted",
+        capture_source="voice",
+    )
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="proposal_confirmed",
+    )
+
+    metrics = client.get("/metrics/engagement", headers={"Authorization": f"Bearer {token}"})
+
+    assert metrics.status_code == 200
+    assert metrics.json()["activation"]["completed_first_capture_confirm_query"] is False
+
+
 def test_state_memory_correct_rejects_negative_quantity_with_422(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")
