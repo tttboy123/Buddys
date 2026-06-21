@@ -455,6 +455,67 @@ def test_desired_state_endpoint_returns_only_explicitly_stored_projection_withou
     ]
 
 
+def test_device_auth_and_runtime_state_persist_across_create_app_restart(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    app = create_app(db_path=db_path)
+    client = TestClient(app)
+    buddy = create_buddy(client)
+
+    pair_response = client.post(
+        "/devices/device_body_restart_001/pair",
+        json=pair_payload(
+            buddy,
+            idempotency_key="pair-restart-001",
+            pairing_token="pair-token-restart-001",
+            agent_machine_id="agent_machine_restart_001",
+        ),
+    )
+    assert pair_response.status_code == 201
+
+    heartbeat_response = client.post(
+        "/devices/device_body_restart_001/heartbeat",
+        headers=pairing_headers("pair-token-restart-001"),
+        json={
+            "firmware_version": "0.2.0-sim",
+            "wifi_rssi": -48,
+            "uptime_seconds": 420,
+            "current_state": "idle",
+            "idempotency_key": "hb-restart-001",
+        },
+    )
+    assert heartbeat_response.status_code == 200
+
+    app.state.device_store.set_desired_state(
+        DeviceDesiredState(
+            device_id="device_body_restart_001",
+            state="manual_required",
+            revision=7,
+            display_text="Persisted restart state",
+            manual_required=True,
+            user_instruction="Use the persisted desired state after restart.",
+            source_trace_id="trace_restart_001",
+            updated_at="2026-06-22T01:00:00+00:00",
+        )
+    )
+    app.state.db.close()
+
+    reopened = create_app(db_path=db_path)
+    reopened_client = TestClient(reopened)
+
+    desired_state = reopened_client.get(
+        "/devices/device_body_restart_001/desired-state",
+        headers=pairing_headers("pair-token-restart-001"),
+    )
+    assert desired_state.status_code == 200
+    assert desired_state.json()["revision"] == 7
+    assert desired_state.json()["user_instruction"] == "Use the persisted desired state after restart."
+
+    snapshot = reopened_client.get("/sync/snapshot")
+    assert snapshot.status_code == 200
+    assert snapshot.json()["latest_heartbeats"]["device_body_restart_001"]["current_state"] == "idle"
+    assert snapshot.json()["desired_states"]["device_body_restart_001"]["revision"] == 7
+
+
 def test_device_events_accept_all_p0_button_actions_without_executing_device_action() -> None:
     store = DeviceRegistry()
     client = make_client(store)

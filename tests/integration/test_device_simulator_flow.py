@@ -250,6 +250,104 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_explic
     assert "trace_sim_002" in screen
 
 
+def test_device_simulator_pairing_and_desired_state_survive_create_app_restart(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    app = create_app(db_path=db_path)
+    client = TestClient(app)
+
+    def request_json(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        path = url.removeprefix("http://runtime.test")
+        response = client.request(method, path, json=payload, headers=headers)
+        assert response.status_code < 400, response.text
+        return response.json()
+
+    assert (
+        cli.main(
+            [
+                "pair",
+                "--device-id",
+                "dev_home_restart_001",
+                "--base-url",
+                "http://runtime.test",
+                "--user-id",
+                "user_demo",
+                "--pairing-token",
+                "pair-token-cli-restart-001",
+                "--idempotency-key",
+                "pair-cli-restart-001",
+            ],
+            request_json=request_json,
+        )
+        == 0
+    )
+    assert (
+        cli.main(
+            [
+                "heartbeat",
+                "--device-id",
+                "dev_home_restart_001",
+                "--base-url",
+                "http://runtime.test",
+                "--idempotency-key",
+                "hb-cli-restart-001",
+                "--pairing-token",
+                "pair-token-cli-restart-001",
+            ],
+            request_json=request_json,
+        )
+        == 0
+    )
+    app.state.device_store.set_desired_state(
+        DeviceDesiredState(
+            device_id="dev_home_restart_001",
+            state="manual_required",
+            revision=4,
+            display_text="Restart-persisted state",
+            manual_required=True,
+            user_instruction="Persist this simulator desired state.",
+            source_trace_id="trace_cli_restart_001",
+            updated_at="2026-06-22T01:10:00+00:00",
+        )
+    )
+    app.state.db.close()
+
+    reopened = create_app(db_path=db_path)
+    reopened_client = TestClient(reopened)
+
+    def reopened_request_json(
+        method: str,
+        url: str,
+        payload: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        path = url.removeprefix("http://runtime.test")
+        response = reopened_client.request(method, path, json=payload, headers=headers)
+        assert response.status_code < 400, response.text
+        return response.json()
+
+    assert (
+        cli.main(
+            [
+                "poll",
+                "--device-id",
+                "dev_home_restart_001",
+                "--base-url",
+                "http://runtime.test",
+                "--pairing-token",
+                "pair-token-cli-restart-001",
+            ],
+            request_json=reopened_request_json,
+        )
+        == 0
+    )
+    assert reopened_client.get("/sync/snapshot").json()["latest_heartbeats"]["dev_home_restart_001"]["current_state"] == "idle"
+
+
 def create_buddy(client: TestClient) -> dict[str, object]:
     response = client.post("/buddies", json={"user_id": "user_demo"})
     assert response.status_code == 201

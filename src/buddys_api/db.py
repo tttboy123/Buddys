@@ -70,6 +70,90 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_sync_events_visibility_revision
             ON sync_events(visibility, actor_user_id, revision);
 
+        CREATE TABLE IF NOT EXISTS devices_runtime (
+            device_id TEXT PRIMARY KEY,
+            buddy_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_devices_runtime_buddy_id
+            ON devices_runtime(buddy_id, device_id);
+
+        CREATE TABLE IF NOT EXISTS agent_machines_runtime (
+            agent_machine_id TEXT PRIMARY KEY,
+            owner_user_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_machines_runtime_owner
+            ON agent_machines_runtime(owner_user_id, agent_machine_id);
+
+        CREATE TABLE IF NOT EXISTS buddy_runtime_bindings (
+            buddy_id TEXT PRIMARY KEY,
+            agent_machine_id TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_buddy_runtime_bindings_agent_machine_id
+            ON buddy_runtime_bindings(agent_machine_id, buddy_id);
+
+        CREATE TABLE IF NOT EXISTS device_pairings_runtime (
+            device_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            pairing_token TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            agent_machine_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY (device_id, idempotency_key)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_device_pairings_runtime_pairing_token
+            ON device_pairings_runtime(pairing_token);
+
+        CREATE INDEX IF NOT EXISTS idx_device_pairings_runtime_buddy_id
+            ON device_pairings_runtime(buddy_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS device_latest_heartbeats_runtime (
+            device_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY (device_id, idempotency_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_device_latest_heartbeats_runtime_device_created
+            ON device_latest_heartbeats_runtime(device_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS device_desired_states_runtime (
+            device_id TEXT PRIMARY KEY,
+            updated_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_device_desired_states_runtime_updated_at
+            ON device_desired_states_runtime(updated_at, device_id);
+
+        CREATE TABLE IF NOT EXISTS device_events_runtime (
+            device_id TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY (device_id, idempotency_key)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_device_events_runtime_device_created
+            ON device_events_runtime(device_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS device_revoked_pairing_tokens_runtime (
+            pairing_token TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL,
+            revoked_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_device_revoked_pairing_tokens_runtime_device
+            ON device_revoked_pairing_tokens_runtime(device_id, revoked_at);
+
         CREATE TABLE IF NOT EXISTS provider_configs (
             user_id TEXT NOT NULL,
             provider_id TEXT NOT NULL,

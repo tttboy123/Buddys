@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
 
+from buddys_api.device_models import DeviceDesiredState
 from buddys_api.main import create_app
 
 
@@ -149,6 +150,81 @@ def test_sync_snapshot_and_events_include_legacy_runtime_device_trace_and_cost_s
     assert [event["revision"] for event in later_events] == [revisions[-1]]
     assert "pairing_token" not in str(event_feed).lower()
     assert "public_key" not in str(event_feed).lower()
+
+
+def test_sync_snapshot_device_runtime_state_survives_restart_without_leaking_pairing_token(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    app = create_app(db_path=db_path)
+    client = TestClient(app)
+
+    buddy = client.post("/buddies", json={"user_id": "user_demo"}).json()
+    pair_response = client.post("/devices/device_body_restart_sync_001/pair", json={
+        "buddy_id": buddy["buddy_id"],
+        "space_id": buddy["space_id"],
+        "public_key": "device-public-key",
+        "firmware_version": "0.1.0",
+        "pairing_token": "pair-token-restart-sync-001",
+        "agent_machine": {
+            "agent_machine_id": "agent_machine_restart_sync_001",
+            "owner_user_id": "user_demo",
+            "machine_type": "local_mac",
+            "endpoint": "https://agent-machine.example.test",
+            "public_key": "agent-machine-public-key",
+            "runtime_version": "0.1.0",
+        },
+        "idempotency_key": "pair-restart-sync-001",
+    })
+    assert pair_response.status_code == 201
+    heartbeat_response = client.post(
+        "/devices/device_body_restart_sync_001/heartbeat",
+        headers=pairing_headers("pair-token-restart-sync-001"),
+        json={
+            "firmware_version": "0.1.0",
+            "wifi_rssi": -55,
+            "uptime_seconds": 300,
+            "current_state": "idle",
+            "idempotency_key": "hb-restart-sync-001",
+        },
+    )
+    assert heartbeat_response.status_code == 200
+    event_response = client.post(
+        "/devices/device_body_restart_sync_001/events",
+        headers=pairing_headers("pair-token-restart-sync-001"),
+        json={"event_type": "ack", "idempotency_key": "event-restart-sync-001", "payload": {"source": "button"}},
+    )
+    assert event_response.status_code == 201
+    app.state.device_store.set_desired_state(
+        DeviceDesiredState(
+            device_id="device_body_restart_sync_001",
+            state="manual_required",
+            revision=8,
+            display_text="Restart snapshot state",
+            manual_required=True,
+            user_instruction="Persisted for sync snapshot.",
+            source_trace_id="trace_restart_sync_001",
+            updated_at="2026-06-22T01:20:00+00:00",
+        )
+    )
+    app.state.db.close()
+
+    reopened = create_app(db_path=db_path)
+    reopened_client = TestClient(reopened)
+
+    snapshot_response = reopened_client.get("/sync/snapshot")
+    events_response = reopened_client.get("/sync/events", params={"since_revision": 0})
+    assert snapshot_response.status_code == 200
+    assert events_response.status_code == 200
+
+    snapshot = snapshot_response.json()
+    event_feed = events_response.json()
+    assert snapshot["devices"][0]["device_id"] == "device_body_restart_sync_001"
+    assert snapshot["agent_machines"][0]["agent_machine_id"] == "agent_machine_restart_sync_001"
+    assert snapshot["bindings"][0]["buddy_id"] == buddy["buddy_id"]
+    assert snapshot["latest_heartbeats"]["device_body_restart_sync_001"]["current_state"] == "idle"
+    assert snapshot["desired_states"]["device_body_restart_sync_001"]["revision"] == 8
+    assert snapshot["device_events"][0]["event_type"] == "ack"
+    assert "pairing_token" not in str(snapshot).lower()
+    assert "pairing_token" not in str(event_feed).lower()
 
 
 def test_sync_snapshot_and_events_do_not_leak_auth_owned_buddies_to_unauthenticated_clients(tmp_path) -> None:

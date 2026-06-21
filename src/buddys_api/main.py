@@ -85,7 +85,7 @@ def create_app(
         runtime.buddy_store = app.state.buddy_store
     if app.state.runtime.usage_store is None:
         app.state.runtime.usage_store = app.state.usage_store
-    app.state.device_store = device_store or DeviceRegistry()
+    app.state.device_store = device_store or DeviceRegistry(connection)
     app.state.state_memory_service = StateMemoryService(
         store=app.state.state_memory_store,
         sync_store=app.state.sync_store,
