@@ -227,6 +227,33 @@
         </ul>
       </section>
 
+      <section id="providerSettingsPanel" class="experience-panel" aria-labelledby="providerSettingsTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h2 id="providerSettingsTitle">Provider settings</h2>
+          </div>
+          <strong id="providerStatusBadge">Signed out</strong>
+        </div>
+        <p id="providerSecretNotice" class="support-copy">
+          Secrets stay on the server. This surface only saves safe provider metadata for your Buddy.
+        </p>
+        <label class="field">
+          <span>Display name</span>
+          <input id="providerDisplayNameInput" type="text" placeholder="MiniMax OpenAI Compatible" disabled />
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <input id="providerModelInput" type="text" placeholder="MiniMax-M3" disabled />
+        </label>
+        <p id="providerSettingsStatus" class="support-copy">Login to configure provider settings.</p>
+        <div class="button-row">
+          <button id="saveProviderSettingsButton" class="secondary-button" type="button" disabled>
+            Save provider settings
+          </button>
+        </div>
+      </section>
+
       <section id="proactiveMemoryCard" class="experience-panel" aria-labelledby="proactiveTitle" hidden>
         <div class="section-heading">
           <div>

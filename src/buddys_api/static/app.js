@@ -5,6 +5,15 @@ const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
 const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
 const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
+const PROVIDER_SETTINGS_DEFAULT = {
+  providerId: "minimax-openai",
+  displayName: "MiniMax OpenAI Compatible",
+  defaultModel: "MiniMax-M3",
+  configured: false,
+  status: "unconfigured",
+  loaded: false,
+  errorMessage: "",
+};
 
 const state = {
   auth: {
@@ -28,6 +37,7 @@ const state = {
     detailsOpen: false,
     dismissedHintKey: null,
     proactiveHint: null,
+    provider: { ...PROVIDER_SETTINGS_DEFAULT },
     photo: {
       base64: null,
       mediaType: null,
@@ -173,6 +183,7 @@ function clearSession() {
   state.ui.detailsOpen = false;
   state.ui.dismissedHintKey = null;
   state.ui.proactiveHint = null;
+  state.ui.provider = { ...PROVIDER_SETTINGS_DEFAULT };
   state.ui.photo = { base64: null, mediaType: null, previewUrl: null, fileName: null };
   state.ui.voice = { transcript: "", status: "idle", supported: voiceRecognitionSupported(), recording: false };
   localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -187,6 +198,11 @@ function syncAuthControls() {
   const hasBuddy = Boolean(state.workspace.buddyId);
   const hasPhoto = Boolean(state.ui.photo.base64);
   const hasVoiceTranscript = Boolean(state.ui.voice.transcript.trim());
+  const providerSettingsUnavailable = state.ui.provider.status === "unavailable";
+  const canSaveProviderSettings =
+    signedIn &&
+    state.ui.provider.status !== "unavailable" &&
+    Boolean(state.ui.provider.providerId);
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
@@ -205,6 +221,9 @@ function syncAuthControls() {
   $("querySubmitButton").disabled = !hasBuddy;
   $("proposalCorrectionInput").disabled = !hasBuddy || !selectedProposal();
   $("submitCorrectionButton").disabled = !hasBuddy || !selectedProposal();
+  $("providerDisplayNameInput").disabled = !signedIn;
+  $("providerModelInput").disabled = !signedIn;
+  $("saveProviderSettingsButton").disabled = providerSettingsUnavailable || !canSaveProviderSettings;
 }
 
 function renderAuthRail() {
@@ -295,6 +314,36 @@ function renderCaptureComposer() {
     $("photoPreviewImage").src = state.ui.photo.previewUrl;
   } else {
     $("photoPreviewImage").removeAttribute("src");
+  }
+  syncAuthControls();
+}
+
+function renderProviderSettings() {
+  const provider = state.ui.provider;
+  $("providerSettingsPanel").dataset.status = provider.status || "signed_out";
+  $("providerDisplayNameInput").value = provider.displayName;
+  $("providerModelInput").value = provider.defaultModel;
+  $("providerSecretNotice").dataset.tone = provider.status === "unavailable" ? "error" : provider.configured ? "ok" : "muted";
+
+  if (!isAuthenticated()) {
+    $("providerStatusBadge").textContent = "Signed out";
+    $("providerSettingsStatus").textContent = "Login to configure provider settings.";
+    syncAuthControls();
+    return;
+  }
+
+  if (provider.status === "unavailable") {
+    $("providerStatusBadge").textContent = "Unavailable";
+    $("providerSettingsStatus").textContent = provider.errorMessage || "Provider settings are temporarily unavailable.";
+  } else if (!provider.loaded) {
+    $("providerStatusBadge").textContent = "Loading";
+    $("providerSettingsStatus").textContent = "Loading provider settings...";
+  } else if (provider.configured) {
+    $("providerStatusBadge").textContent = "Configured";
+    $("providerSettingsStatus").textContent = `${provider.displayName} is configured for this account.`;
+  } else {
+    $("providerStatusBadge").textContent = "Unconfigured";
+    $("providerSettingsStatus").textContent = "No account-level provider override yet. Save safe metadata to configure one.";
   }
   syncAuthControls();
 }
@@ -600,6 +649,7 @@ function renderExperienceShell() {
   renderCaptureComposer();
   renderProposalInbox();
   renderLatestAnswer();
+  renderProviderSettings();
   renderProactiveMemoryCard();
   renderDetailsDrawer();
 }
@@ -737,7 +787,92 @@ async function createMyBuddy() {
 
 async function loadAuthWorkspace() {
   await loadAuthBuddies();
+  try {
+    await loadProviderSettings();
+  } catch (error) {
+    handleProviderSettingsLoadFailure(error);
+  }
   await loadSyncSnapshot();
+}
+
+async function loadProviderSettings() {
+  if (!isAuthenticated()) {
+    state.ui.provider = { ...PROVIDER_SETTINGS_DEFAULT };
+    renderProviderSettings();
+    return;
+  }
+  const payload = await requestJson("/providers", { headers: {} });
+  const config = (payload.configs || []).find((item) => item.provider_type === "openai_compatible") || null;
+  state.ui.provider = {
+    ...PROVIDER_SETTINGS_DEFAULT,
+    providerId: config?.provider_id || PROVIDER_SETTINGS_DEFAULT.providerId,
+    displayName: config?.display_name || PROVIDER_SETTINGS_DEFAULT.displayName,
+    defaultModel: config?.default_model || PROVIDER_SETTINGS_DEFAULT.defaultModel,
+    configured: Boolean(config?.configured),
+    status: config?.configured ? "configured" : "unconfigured",
+    loaded: true,
+    errorMessage: "",
+  };
+  renderProviderSettings();
+}
+
+function handleProviderSettingsLoadFailure(error) {
+  state.ui.provider = {
+    ...state.ui.provider,
+    providerId: null,
+    loaded: true,
+    configured: false,
+    status: "unavailable",
+    errorMessage: `Provider settings are temporarily unavailable: ${error.message}`,
+  };
+  renderProviderSettings();
+}
+
+async function saveProviderSettings() {
+  if (!isAuthenticated()) {
+    setAuthStatus("Login before saving provider settings.", "error");
+    return;
+  }
+  if (state.ui.provider.status === "unavailable" || !state.ui.provider.providerId) {
+    $("providerSettingsStatus").textContent = "Provider settings are temporarily unavailable. Retry before saving.";
+    syncAuthControls();
+    return;
+  }
+  const displayName = $("providerDisplayNameInput").value.trim();
+  const defaultModel = $("providerModelInput").value.trim();
+  if (!displayName || !defaultModel) {
+    $("providerSettingsStatus").textContent = "Display name and model are required.";
+    return;
+  }
+  try {
+    const result = await requestJson("/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        provider_id: state.ui.provider.providerId,
+        display_name: displayName,
+        provider_type: "openai_compatible",
+        base_url: "https://api.minimax.io/v1",
+        api_key_env_var: "OPENAI_API_KEY",
+        default_model: defaultModel,
+      }),
+    });
+    state.ui.provider = {
+      ...PROVIDER_SETTINGS_DEFAULT,
+      providerId: result.provider_id,
+      displayName: result.display_name,
+      defaultModel: result.default_model,
+      configured: Boolean(result.configured),
+      status: result.configured ? "configured" : "unconfigured",
+      loaded: true,
+      errorMessage: "",
+    };
+    $("providerSettingsStatus").textContent = result.configured
+      ? `${result.display_name} is configured for this account.`
+      : `${result.display_name} saved. Waiting for server-side OPENAI_API_KEY.`;
+    renderProviderSettings();
+  } catch (error) {
+    $("providerSettingsStatus").textContent = `Provider settings failed: ${error.message}`;
+  }
 }
 
 function projectWorkspace(snapshot) {
@@ -976,7 +1111,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("querySubmitButton").addEventListener("click", submitQuery);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
+  $("saveProviderSettingsButton").addEventListener("click", saveProviderSettings);
   $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);
+  $("providerDisplayNameInput").addEventListener("input", () => {
+    state.ui.provider.displayName = $("providerDisplayNameInput").value;
+  });
+  $("providerModelInput").addEventListener("input", () => {
+    state.ui.provider.defaultModel = $("providerModelInput").value;
+  });
   $("detailsDrawer").addEventListener("toggle", () => {
     state.ui.detailsOpen = $("detailsDrawer").open;
   });

@@ -113,6 +113,22 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert "Why this answer / details" in html
 
 
+def test_console_html_exposes_secure_provider_settings_surface() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+
+    assert 'id="providerSettingsPanel"' in html
+    assert 'id="providerStatusBadge"' in html
+    assert 'id="providerDisplayNameInput"' in html
+    assert 'id="providerModelInput"' in html
+    assert 'id="saveProviderSettingsButton"' in html
+    assert 'id="providerSecretNotice"' in html
+    assert "Secrets stay on the server" in html
+    assert 'id="providerApiKeyInput"' not in html
+    assert 'id="providerTokenInput"' not in html
+
+
 def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> None:
     client = make_client()
 
@@ -132,6 +148,72 @@ def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> 
     assert "handlePhotoSelected" in script
     assert "submitPhotoCapture" in script
     assert "submitVoiceTranscript" in script
+
+
+def test_console_assets_support_provider_settings_without_secret_echo() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    load_provider_settings_body = extract_function_body(script, "loadProviderSettings")
+    sync_auth_controls_body = extract_function_body(script, "syncAuthControls")
+    save_provider_settings_body = extract_function_body(script, "saveProviderSettings")
+    handle_provider_settings_failure_body = extract_function_body(script, "handleProviderSettingsLoadFailure")
+
+    assert "loadProviderSettings" in script
+    assert "saveProviderSettings" in script
+    assert "/providers" in script
+    assert "providerSettingsPanel" in script
+    assert "providerStatusBadge" in script
+    assert "providerDisplayNameInput" in script
+    assert "providerModelInput" in script
+    assert "saveProviderSettingsButton" in script
+    assert "providerApiKeyInput" not in script
+    assert "providerTokenInput" not in script
+    assert "providerSecretNotice" in script
+    assert '"api_key":' not in script
+    assert '"token":' not in script
+    assert '.find((item) => item.provider_type === "openai_compatible")' in load_provider_settings_body
+    assert 'state.ui.provider.status === "unavailable"' in sync_auth_controls_body
+    assert "Boolean(state.ui.provider.providerId)" in sync_auth_controls_body
+    assert "provider_id: state.ui.provider.providerId" in save_provider_settings_body
+    assert "provider_id: PROVIDER_SETTINGS_DEFAULT.providerId" not in save_provider_settings_body
+    assert 'state.ui.provider.status === "unavailable"' in save_provider_settings_body
+    assert "Provider settings are temporarily unavailable. Retry before saving." in save_provider_settings_body
+    assert "providerId: null" in handle_provider_settings_failure_body
+
+
+def test_console_assets_keep_auth_signed_in_when_provider_settings_load_fails() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    restore_session_body = extract_function_body(script, "restoreSession")
+    load_auth_workspace_body = extract_function_body(script, "loadAuthWorkspace")
+    register_auth_body = extract_function_body(script, "registerAuth")
+    login_auth_body = extract_function_body(script, "loginAuth")
+
+    assert "handleProviderSettingsLoadFailure" in script
+    assert 'setAuthStatus(`Signed in as ${state.auth.user.email}`, "ok");' in restore_session_body
+    assert "clearSession();" in restore_session_body
+    assert "handleProviderSettingsLoadFailure(error);" in load_auth_workspace_body
+    assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in register_auth_body
+    assert "await loadAuthWorkspace();" in register_auth_body
+    assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in login_auth_body
+    assert "await loadAuthWorkspace();" in login_auth_body
+
+
+def test_console_provider_settings_unavailable_state_disables_save_and_shows_retry_copy() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    render_provider_settings_body = extract_function_body(script, "renderProviderSettings")
+    sync_auth_controls_body = extract_function_body(script, "syncAuthControls")
+    save_provider_settings_body = extract_function_body(script, "saveProviderSettings")
+
+    assert 'provider.status === "unavailable"' in render_provider_settings_body
+    assert '$("providerStatusBadge").textContent = "Unavailable";' in render_provider_settings_body
+    assert "Provider settings are temporarily unavailable" in render_provider_settings_body
+    assert 'state.ui.provider.status !== "unavailable"' in sync_auth_controls_body
+    assert "Provider settings are temporarily unavailable. Retry before saving." in save_provider_settings_body
 
 
 def test_console_assets_support_session_aware_auth_and_state_memory_client_flow() -> None:
