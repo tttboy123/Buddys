@@ -9,11 +9,7 @@ from buddys_api.device_models import (
     AgentMachine,
     BuddyRuntimeBinding,
     Device,
-    DeviceProactiveHint,
-    DeviceRecentActivityEntry,
     DeviceDesiredState,
-    DeviceStateMemoryItemSummary,
-    DeviceStateMemoryProjection,
     DeviceEvent,
     DeviceHeartbeat,
     DeviceState,
@@ -25,7 +21,6 @@ from buddys_api.device_models import (
 from buddys_api.device_store import DeviceRegistry, DuplicatePairingError
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import Buddy
-from buddys_api.sync_store import build_device_state_memory_projection
 
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -163,23 +158,8 @@ def device_heartbeat(device_id: DeviceIdPath, request: DeviceHeartbeatRequest, f
 def get_device_desired_state(device_id: DeviceIdPath, fastapi_request: Request) -> DeviceDesiredState:
     device_id = _validate_path_id(device_id, "device_id")
     device_store = _device_store(fastapi_request)
-    device = _require_device(device_store, device_id)
-    desired_state = device_store.get_desired_state(device_id)
-    projection = build_device_state_memory_projection(
-        buddy_id=device.buddy_id,
-        user_id=_buddy_owner_user_id(fastapi_request, device.buddy_id),
-        state_memory_store=fastapi_request.app.state.state_memory_store,
-        traces=fastapi_request.app.state.runtime.trace_store.list(),
-    )
-    if not projection:
-        return desired_state
-    return desired_state.model_copy(
-        update={
-            "state_memory": _device_state_memory_projection(projection.get("state_memory")),
-            "proactive_hint": _device_proactive_hint(projection.get("proactive_hint")),
-            "recent_activity": _device_recent_activity(projection.get("recent_activity")),
-        }
-    )
+    _require_device(device_store, device_id)
+    return device_store.get_desired_state(device_id)
 
 
 @router.post("/{device_id}/events", status_code=201)
@@ -231,75 +211,6 @@ def _require_legacy_buddy(runtime: BuddysRuntime, buddy_id: str) -> Buddy:
         return runtime._get_legacy_buddy(buddy_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "buddy_not_found"}) from exc
-
-
-def _buddy_owner_user_id(request: Request, buddy_id: str) -> str:
-    return request.app.state.buddy_store.get(buddy_id).user_id
-
-
-def _device_state_memory_projection(value: object) -> DeviceStateMemoryProjection | None:
-    if not isinstance(value, dict):
-        return None
-    confirmed_items = value.get("confirmed_items")
-    pending_count = value.get("pending_proposal_count", 0)
-    if not isinstance(confirmed_items, list):
-        confirmed_items = []
-    return DeviceStateMemoryProjection(
-        confirmed_items=[
-            DeviceStateMemoryItemSummary(
-                name=str(item.get("name")).strip(),
-                quantity=item.get("quantity"),
-                unit=item.get("unit"),
-            )
-            for item in confirmed_items
-            if isinstance(item, dict) and str(item.get("name", "")).strip()
-        ],
-        pending_proposal_count=int(pending_count) if isinstance(pending_count, int) else 0,
-    )
-
-
-def _device_proactive_hint(value: object) -> DeviceProactiveHint | None:
-    if not isinstance(value, dict):
-        return None
-    kind = value.get("kind")
-    message = value.get("message")
-    if kind != "consumption_inference" or not isinstance(message, str) or not message.strip():
-        return None
-    item_names = value.get("item_names")
-    if not isinstance(item_names, list):
-        item_names = []
-    return DeviceProactiveHint(
-        kind="consumption_inference",
-        message=message.strip(),
-        item_names=[str(item).strip() for item in item_names if str(item).strip()],
-    )
-
-
-def _device_recent_activity(value: object) -> list[DeviceRecentActivityEntry]:
-    if not isinstance(value, list):
-        return []
-    allowed_kinds = {"capture_confirmed", "proposal_waiting", "query_answered"}
-    entries: list[DeviceRecentActivityEntry] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        kind = item.get("kind")
-        summary = item.get("summary")
-        created_at = item.get("created_at")
-        if kind not in allowed_kinds:
-            continue
-        if not isinstance(summary, str) or not summary.strip():
-            continue
-        if not isinstance(created_at, str) or not created_at.strip():
-            continue
-        entries.append(
-            DeviceRecentActivityEntry(
-                kind=kind,
-                summary=summary.strip(),
-                created_at=created_at.strip(),
-            )
-        )
-    return entries
 
 
 def _require_device(device_store: DeviceRegistry, device_id: str) -> Device:

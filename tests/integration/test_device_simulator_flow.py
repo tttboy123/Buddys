@@ -128,7 +128,7 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
     assert [event.event_type for event in store.list_events("device_body_sim_001")] == ["manual_done"]
 
 
-def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_snapshot(tmp_path) -> None:
+def test_device_simulator_renders_hardware_side_state_memory_summary_from_explicit_desired_state(tmp_path) -> None:
     app = create_app(device_store=DeviceRegistry(), db_path=tmp_path / "buddys.sqlite3")
     client = TestClient(app)
     token = register(client, "device-sim@example.com")
@@ -166,33 +166,6 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_
         idempotency_key="pair-sim-auth-001",
     )
 
-    confirmed_capture = client.post(
-        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"content": "我买了五个鸡蛋和一盒牛奶"},
-    )
-    assert confirmed_capture.status_code == 201
-    confirmed_proposal_id = confirmed_capture.json()["proposal"]["proposal_id"]
-    confirmed = client.post(
-        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{confirmed_proposal_id}/confirm",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert confirmed.status_code == 200
-
-    pending_capture = client.post(
-        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"content": "香料用完了"},
-    )
-    assert pending_capture.status_code == 201
-
-    query = client.post(
-        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"question": "有鸡蛋吗"},
-    )
-    assert query.status_code == 200
-
     store.set_desired_state(
         DeviceDesiredState(
             device_id="device_body_sim_001",
@@ -202,6 +175,25 @@ def test_device_simulator_renders_hardware_side_state_memory_summary_from_owner_
             manual_required=True,
             user_instruction="Press the physical button after checking the pantry.",
             source_trace_id="trace_sim_002",
+            state_memory={
+                "confirmed_items": [
+                    {"name": "鸡蛋", "quantity": 5, "unit": "个"},
+                    {"name": "牛奶", "quantity": 1, "unit": "盒"},
+                ],
+                "pending_proposal_count": 1,
+            },
+            proactive_hint={
+                "kind": "consumption_inference",
+                "message": "Buddy thinks 鸡蛋 might be running low.",
+                "item_names": ["鸡蛋"],
+            },
+            recent_activity=[
+                {
+                    "kind": "query_answered",
+                    "summary": "还有鸡蛋。",
+                    "created_at": "2026-06-22T00:00:00+00:00",
+                }
+            ],
         )
     )
     desired_state = client.get("/devices/device_body_sim_001/desired-state").json()

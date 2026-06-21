@@ -164,7 +164,7 @@ def test_desired_state_endpoint_returns_manual_required_state() -> None:
     assert body["user_instruction"] == "请手动把客厅灯调暗到约 35%。"
 
 
-def test_desired_state_endpoint_projects_safe_state_memory_summary_for_paired_auth_buddy(tmp_path) -> None:
+def test_desired_state_endpoint_does_not_project_auth_state_memory_into_unauthenticated_read(tmp_path) -> None:
     store = DeviceRegistry()
     app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
     client = TestClient(app)
@@ -238,6 +238,7 @@ def test_desired_state_endpoint_projects_safe_state_memory_summary_for_paired_au
             manual_required=True,
             user_instruction="Press the physical button after checking the pantry.",
             source_trace_id="trace_sim_002",
+            updated_at="2026-06-22T00:00:00+00:00",
         )
     )
 
@@ -245,16 +246,120 @@ def test_desired_state_endpoint_projects_safe_state_memory_summary_for_paired_au
 
     assert response.status_code == 200
     body = response.json()
-    assert sorted(item["name"] for item in body["state_memory"]["confirmed_items"]) == ["牛奶", "鸡蛋"]
-    assert body["state_memory"]["pending_proposal_count"] == 1
-    assert body["proactive_hint"]["kind"] == "consumption_inference"
-    assert body["proactive_hint"]["item_names"] in (["牛奶"], ["鸡蛋"])
-    assert body["recent_activity"][-1]["kind"] == "query_answered"
-    assert body["recent_activity"][-1]["summary"] == "还有鸡蛋。"
+    assert body["revision"] == 6
+    assert body["updated_at"] == "2026-06-22T00:00:00+00:00"
+    assert body.get("state_memory") is None
+    assert body.get("proactive_hint") is None
+    assert body["recent_activity"] == []
     serialized = str(body).lower()
     assert "api_key" not in serialized
     assert "capabilities" not in serialized
     assert "token" not in serialized
+
+
+def test_desired_state_endpoint_returns_only_explicitly_stored_projection_without_live_overlay(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-explicit@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    store.pair_device(
+        device=Device(
+            device_id="device_body_auth_explicit_001",
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0-sim",
+        ),
+        agent_machine=AgentMachine(
+            agent_machine_id="agent_machine_auth_explicit_001",
+            owner_user_id=buddy["user_id"],
+            machine_type="local_mac",
+            endpoint="https://agent-machine.example.test",
+            public_key="agent-machine-public-key",
+            runtime_version="0.2.0-sim",
+            status="online",
+        ),
+        binding=BuddyRuntimeBinding(
+            buddy_id=buddy["buddy_id"],
+            agent_machine_id="agent_machine_auth_explicit_001",
+            role="primary",
+        ),
+        pairing_token="pair-auth-device-explicit-001",
+        idempotency_key="pair-auth-device-explicit-001",
+    )
+
+    app.state.device_store.set_desired_state(
+        DeviceDesiredState(
+            device_id="device_body_auth_explicit_001",
+            state="manual_required",
+            revision=9,
+            display_text="Stored projection",
+            manual_required=True,
+            user_instruction="Use stored data only.",
+            source_trace_id="trace_stored_projection_001",
+            updated_at="2026-06-22T00:05:00+00:00",
+            state_memory={
+                "confirmed_items": [{"name": "存货", "quantity": 2, "unit": "件"}],
+                "pending_proposal_count": 7,
+            },
+            proactive_hint={
+                "kind": "consumption_inference",
+                "message": "Stored hint only.",
+                "item_names": ["存货"],
+            },
+            recent_activity=[
+                {
+                    "kind": "query_answered",
+                    "summary": "Stored recent activity.",
+                    "created_at": "2026-06-22T00:05:00+00:00",
+                }
+            ],
+        )
+    )
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"content": "我买了五个鸡蛋和一盒牛奶"},
+    )
+    assert capture.status_code == 201
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert confirm.status_code == 200
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+
+    response = client.get("/devices/device_body_auth_explicit_001/desired-state")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revision"] == 9
+    assert body["updated_at"] == "2026-06-22T00:05:00+00:00"
+    assert body["state_memory"]["confirmed_items"] == [{"name": "存货", "quantity": 2.0, "unit": "件"}]
+    assert body["state_memory"]["pending_proposal_count"] == 7
+    assert body["proactive_hint"]["message"] == "Stored hint only."
+    assert body["recent_activity"] == [
+        {
+            "kind": "query_answered",
+            "summary": "Stored recent activity.",
+            "created_at": "2026-06-22T00:05:00+00:00",
+        }
+    ]
 
 
 def test_device_events_accept_all_p0_button_actions_without_executing_device_action() -> None:
