@@ -129,6 +129,23 @@ def test_console_html_exposes_secure_provider_settings_surface() -> None:
     assert 'id="providerTokenInput"' not in html
 
 
+def test_console_html_exposes_read_only_agent_management_surface() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+
+    assert 'id="agentManagementPanel"' in html
+    assert 'id="agentManagementTitle"' in html
+    assert 'id="agentManagementStatus"' in html
+    assert 'id="agentManagementList"' in html
+    assert "Agent management" in html
+    assert "Safe summary only" in html
+    assert 'id="saveAgentButton"' not in html
+    assert 'id="editAgentButton"' not in html
+    assert 'id="agentMetadataInput"' not in html
+    assert 'id="agentCapabilitiesInput"' not in html
+
+
 def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> None:
     client = make_client()
 
@@ -148,6 +165,44 @@ def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> 
     assert "handlePhotoSelected" in script
     assert "submitPhotoCapture" in script
     assert "submitVoiceTranscript" in script
+
+
+def test_console_assets_render_read_only_agent_management_summary_without_metadata_leakage() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    render_agent_management_body = extract_function_body(script, "renderAgentManagement")
+    format_agent_role_body = extract_function_body(script, "formatAgentRole")
+    whitelist_agent_summary_body = extract_function_body(script, "whitelistAgentSummary")
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+
+    assert "renderAgentManagement" in script
+    assert "formatAgentRole" in script
+    assert "whitelistAgentSummary" in script
+    assert 'state.workspace.agents = (snapshot.agents || []).map(whitelistAgentSummary);' in project_workspace_body
+    assert '"runtime": "Runtime"' in format_agent_role_body
+    assert '"hardware_simulator": "Hardware simulator"' in format_agent_role_body
+    assert '"cost_agent": "Cost agent"' in format_agent_role_body
+    assert '"doc_progress": "Doc progress"' in format_agent_role_body
+    assert "agent_id: agent.agent_id" in whitelist_agent_summary_body
+    assert "name: agent.name" in whitelist_agent_summary_body
+    assert "role: agent.role" in whitelist_agent_summary_body
+    assert "status: agent.status" in whitelist_agent_summary_body
+    assert "version: agent.version" in whitelist_agent_summary_body
+    assert "last_seen: agent.last_seen" in whitelist_agent_summary_body
+    assert "metadata" not in whitelist_agent_summary_body
+    assert "capabilities" not in whitelist_agent_summary_body
+    assert "agent.role" in render_agent_management_body
+    assert "agent.status" in render_agent_management_body
+    assert "agent.last_seen" in render_agent_management_body
+    assert "agent.version" in render_agent_management_body
+    assert "agent.metadata" not in render_agent_management_body
+    assert "agent.capabilities" not in render_agent_management_body
+    assert "api_key" not in render_agent_management_body
+    assert "token" not in render_agent_management_body
+    assert "secret" not in render_agent_management_body
+    assert "Save agent" not in script
+    assert "Edit agent" not in script
 
 
 def test_console_assets_support_provider_settings_without_secret_echo() -> None:

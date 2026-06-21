@@ -23,6 +23,7 @@ const state = {
   workspace: {
     buddyId: null,
     buddies: [],
+    agents: [],
     confirmedItems: [],
     pendingProposals: [],
     latestQuery: null,
@@ -171,6 +172,7 @@ function clearSession() {
   state.auth.user = null;
   state.workspace.buddyId = null;
   state.workspace.buddies = [];
+  state.workspace.agents = [];
   state.workspace.confirmedItems = [];
   state.workspace.pendingProposals = [];
   state.workspace.latestQuery = null;
@@ -346,6 +348,63 @@ function renderProviderSettings() {
     $("providerSettingsStatus").textContent = "No account-level provider override yet. Save safe metadata to configure one.";
   }
   syncAuthControls();
+}
+
+function formatAgentRole(role) {
+  return (
+    {
+      "runtime": "Runtime",
+      "hardware_simulator": "Hardware simulator",
+      "cost_agent": "Cost agent",
+      "verifier": "Verifier",
+      "doc_progress": "Doc progress",
+      "adapter": "Adapter",
+    }[role] || role
+  );
+}
+
+function whitelistAgentSummary(agent) {
+  return {
+    agent_id: agent.agent_id,
+    name: agent.name,
+    role: agent.role,
+    status: agent.status,
+    version: agent.version,
+    last_seen: agent.last_seen,
+  };
+}
+
+function renderAgentManagement() {
+  const list = $("agentManagementList");
+  list.replaceChildren();
+
+  if (!isAuthenticated()) {
+    $("agentManagementStatus").textContent = "Login to view agent summaries.";
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "No agent summaries yet.";
+    list.appendChild(emptyItem);
+    return;
+  }
+
+  const agents = state.workspace.agents || [];
+  $("agentManagementStatus").textContent = agents.length
+    ? `${agents.length} agent summaries for this account.`
+    : "No agent summaries yet.";
+
+  if (!agents.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "No agent summaries yet.";
+    list.appendChild(emptyItem);
+    return;
+  }
+
+  agents.forEach((agent) => {
+    const item = document.createElement("li");
+    appendLine(item, `${agent.name} · ${formatAgentRole(agent.role)} · ${agent.status}`);
+    appendLine(item, `Version: ${agent.version || "-"}`, "evidence-line");
+    appendLine(item, `Heartbeat: ${agent.last_seen || "Never"}`, "evidence-line");
+    list.appendChild(item);
+  });
 }
 
 function voiceRecognitionSupported() {
@@ -650,6 +709,7 @@ function renderExperienceShell() {
   renderProposalInbox();
   renderLatestAnswer();
   renderProviderSettings();
+  renderAgentManagement();
   renderProactiveMemoryCard();
   renderDetailsDrawer();
 }
@@ -880,6 +940,7 @@ function projectWorkspace(snapshot) {
     state.workspace.stateRevision = 0;
     state.workspace.buddies = [];
     state.workspace.buddyId = null;
+    state.workspace.agents = [];
     state.workspace.confirmedItems = [];
     state.workspace.pendingProposals = [];
     state.workspace.latestQuery = null;
@@ -891,6 +952,7 @@ function projectWorkspace(snapshot) {
   } else {
     state.workspace.stateRevision = snapshot.state_revision || 0;
     state.workspace.buddies = snapshot.buddies || [];
+    state.workspace.agents = (snapshot.agents || []).map(whitelistAgentSummary);
     if (state.workspace.buddies.length && !state.workspace.buddyId) {
       state.workspace.buddyId = state.workspace.buddies[0].buddy_id;
     }
