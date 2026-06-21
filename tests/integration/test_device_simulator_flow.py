@@ -105,6 +105,7 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
             manual_required=True,
             user_instruction="Press the physical button after dimming the light.",
             source_trace_id="trace_sim_001",
+            updated_at="2024-01-01T00:00:00+00:00",
         )
     )
     desired_response = client.get("/devices/device_body_sim_001/desired-state")
@@ -113,6 +114,7 @@ def test_device_simulator_pairs_heartbeats_polls_renders_and_submits_manual_done
     screen = render_screen(desired_response.json())
     assert "manual_required" in screen
     assert "Press the physical button after dimming the light." in screen
+    assert "sync: stale @ 2024-01-01T00:00:00+00:00" in screen
     assert "trace_sim_001" in screen
 
     event_payload = build_device_event(

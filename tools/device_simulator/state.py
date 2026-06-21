@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from textwrap import shorten
 from typing import Any
 
@@ -44,6 +45,9 @@ def render_screen(desired_state: dict[str, Any]) -> str:
         f"state: {state}",
         f"rev {revision}",
     ]
+    sync_cue = _sync_cue_line(desired_state.get("updated_at"))
+    if sync_cue:
+        lines.append(sync_cue)
     if display_text:
         lines.append(f"text: {_compact(display_text)}")
     if state == "manual_required" and instruction:
@@ -120,6 +124,35 @@ def _first_text(*values: object) -> str | None:
 
 def _compact(value: str) -> str:
     return shorten(value, width=68, placeholder="...")
+
+
+def _sync_cue_line(updated_at: Any) -> str | None:
+    if not isinstance(updated_at, str) or not updated_at.strip():
+        return None
+    freshness = _freshness_label(updated_at)
+    if freshness is None:
+        return None
+    return f"sync: {freshness} @ {updated_at}"
+
+
+def _freshness_label(updated_at: str) -> str | None:
+    timestamp = _parse_timestamp(updated_at)
+    if timestamp is None:
+        return None
+    age_seconds = max((datetime.now(timezone.utc) - timestamp).total_seconds(), 0.0)
+    if age_seconds <= 120:
+        return "fresh"
+    return "stale"
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    try:
+        timestamp = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
 
 
 def _state_memory_lines(state_memory: Any) -> list[str]:

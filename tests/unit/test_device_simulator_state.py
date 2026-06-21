@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timedelta, timezone
 
 from tools.device_simulator.state import (
     ALLOWED_EVENTS,
@@ -54,6 +55,34 @@ def test_render_state_memory_summary_includes_confirmed_pantry_and_pending_count
 
     assert "pantry: 鸡蛋 5个, 牛奶 1盒" in screen
     assert "pending: 2 proposal(s)" in screen
+
+
+def test_render_screen_includes_stale_sync_cue_from_desired_state_timestamp() -> None:
+    screen = render_screen(
+        {
+            "state": "idle",
+            "revision": 12,
+            "updated_at": "2024-01-01T00:00:00+00:00",
+        }
+    )
+
+    assert "rev 12" in screen
+    assert "sync: stale @ 2024-01-01T00:00:00+00:00" in screen
+
+
+def test_render_screen_marks_recent_desired_state_as_fresh() -> None:
+    recent = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+
+    screen = render_screen(
+        {
+            "state": "idle",
+            "revision": 3,
+            "updated_at": recent,
+        }
+    )
+
+    assert "rev 3" in screen
+    assert f"sync: fresh @ {recent}" in screen
 
 
 def test_build_heartbeat_payload_matches_api_contract_without_secret_fields() -> None:
