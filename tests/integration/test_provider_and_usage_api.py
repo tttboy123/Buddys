@@ -88,6 +88,36 @@ def test_system_managed_default_provider_does_not_appear_in_provider_listing(tmp
     assert "system-minimax-default" not in str(payload)
 
 
+def test_provider_and_snapshot_surfaces_never_echo_default_or_runtime_secret_values(tmp_path, monkeypatch) -> None:
+    secret_value = "sk-secret-should-never-leak"
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+    monkeypatch.setenv("OPENAI_API_KEY", secret_value)
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    monkeypatch.setenv("BUDDYS_DEFAULT_TOKEN_PLAN_KEY", "sk-cp-system-default")
+
+    create_response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json=valid_provider_payload(),
+    )
+    providers_response = client.get("/providers", headers={"Authorization": f"Bearer {token}"})
+    snapshot_response = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"})
+
+    assert create_response.status_code == 200
+    assert providers_response.status_code == 200
+    assert snapshot_response.status_code == 200
+
+    serialized = str([create_response.json(), providers_response.json(), snapshot_response.json()])
+    assert secret_value not in serialized
+    assert "BUDDYS_DEFAULT_OPENAI_API_KEY" not in serialized
+    assert "BUDDYS_DEFAULT_TOKEN_PLAN_KEY" not in serialized
+    assert "api_key':" not in serialized
+    assert 'api_key"' not in serialized
+    assert "secret" not in serialized.lower()
+    assert "password" not in serialized.lower()
+
+
 def test_provider_config_rejects_raw_key_in_env_var_field_without_echoing_it(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")

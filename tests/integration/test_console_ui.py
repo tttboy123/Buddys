@@ -113,37 +113,22 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert "Why this answer / details" in html
 
 
-def test_console_html_exposes_secure_provider_settings_surface() -> None:
+def test_console_html_exposes_user_transparency_surfaces_without_operator_panels() -> None:
     client = make_client()
 
     html = client.get("/console").text
 
-    assert 'id="providerSettingsPanel"' in html
-    assert 'id="providerStatusBadge"' in html
-    assert 'id="providerDisplayNameInput"' in html
-    assert 'id="providerModelInput"' in html
-    assert 'id="saveProviderSettingsButton"' in html
-    assert 'id="providerSecretNotice"' in html
-    assert "Secrets stay on the server" in html
-    assert 'id="providerApiKeyInput"' not in html
-    assert 'id="providerTokenInput"' not in html
-
-
-def test_console_html_exposes_read_only_agent_management_surface() -> None:
-    client = make_client()
-
-    html = client.get("/console").text
-
-    assert 'id="agentManagementPanel"' in html
-    assert 'id="agentManagementTitle"' in html
-    assert 'id="agentManagementStatus"' in html
-    assert 'id="agentManagementList"' in html
-    assert "Agent management" in html
-    assert "Safe summary only" in html
-    assert 'id="saveAgentButton"' not in html
-    assert 'id="editAgentButton"' not in html
-    assert 'id="agentMetadataInput"' not in html
-    assert 'id="agentCapabilitiesInput"' not in html
+    assert 'id="buddyActivityPanel"' in html
+    assert 'id="buddyActivityTitle"' in html
+    assert 'id="buddyActivityList"' in html
+    assert 'id="buddyThinkingPanel"' in html
+    assert 'id="buddyThinkingTitle"' in html
+    assert 'id="answerBasisPanel"' in html
+    assert "What Buddy just did" in html
+    assert "Why Buddy thinks that" in html
+    assert "Agent management" not in html
+    assert "Provider settings" not in html
+    assert "Cost governance" not in html
 
 
 def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> None:
@@ -167,108 +152,23 @@ def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> 
     assert "submitVoiceTranscript" in script
 
 
-def test_console_assets_render_read_only_agent_management_summary_without_metadata_leakage() -> None:
+def test_console_assets_project_safe_recent_activity_for_transparency_view() -> None:
     client = make_client()
 
     script = client.get("/static/app.js").text
-    render_agent_management_body = extract_function_body(script, "renderAgentManagement")
-    format_agent_role_body = extract_function_body(script, "formatAgentRole")
-    whitelist_agent_summary_body = extract_function_body(script, "whitelistAgentSummary")
     project_workspace_body = extract_function_body(script, "projectWorkspace")
+    clear_session_body = extract_function_body(script, "clearSession")
+    render_recent_activity_body = extract_function_body(script, "renderRecentActivity")
 
-    assert "renderAgentManagement" in script
-    assert "formatAgentRole" in script
-    assert "whitelistAgentSummary" in script
-    assert 'state.workspace.agents = (snapshot.agents || []).map(whitelistAgentSummary);' in project_workspace_body
-    assert '"runtime": "Runtime"' in format_agent_role_body
-    assert '"hardware_simulator": "Hardware simulator"' in format_agent_role_body
-    assert '"cost_agent": "Cost agent"' in format_agent_role_body
-    assert '"doc_progress": "Doc progress"' in format_agent_role_body
-    assert "agent_id: agent.agent_id" in whitelist_agent_summary_body
-    assert "name: agent.name" in whitelist_agent_summary_body
-    assert "role: agent.role" in whitelist_agent_summary_body
-    assert "status: agent.status" in whitelist_agent_summary_body
-    assert "version: agent.version" in whitelist_agent_summary_body
-    assert "last_seen: agent.last_seen" in whitelist_agent_summary_body
-    assert "metadata" not in whitelist_agent_summary_body
-    assert "capabilities" not in whitelist_agent_summary_body
-    assert "agent.role" in render_agent_management_body
-    assert "agent.status" in render_agent_management_body
-    assert "agent.last_seen" in render_agent_management_body
-    assert "agent.version" in render_agent_management_body
-    assert "agent.metadata" not in render_agent_management_body
-    assert "agent.capabilities" not in render_agent_management_body
-    assert "api_key" not in render_agent_management_body
-    assert "token" not in render_agent_management_body
-    assert "secret" not in render_agent_management_body
-    assert "Save agent" not in script
-    assert "Edit agent" not in script
-
-
-def test_console_assets_support_provider_settings_without_secret_echo() -> None:
-    client = make_client()
-
-    script = client.get("/static/app.js").text
-    load_provider_settings_body = extract_function_body(script, "loadProviderSettings")
-    sync_auth_controls_body = extract_function_body(script, "syncAuthControls")
-    save_provider_settings_body = extract_function_body(script, "saveProviderSettings")
-    handle_provider_settings_failure_body = extract_function_body(script, "handleProviderSettingsLoadFailure")
-
-    assert "loadProviderSettings" in script
-    assert "saveProviderSettings" in script
-    assert "/providers" in script
-    assert "providerSettingsPanel" in script
-    assert "providerStatusBadge" in script
-    assert "providerDisplayNameInput" in script
-    assert "providerModelInput" in script
-    assert "saveProviderSettingsButton" in script
-    assert "providerApiKeyInput" not in script
-    assert "providerTokenInput" not in script
-    assert "providerSecretNotice" in script
-    assert '"api_key":' not in script
-    assert '"token":' not in script
-    assert '.find((item) => item.provider_type === "openai_compatible")' in load_provider_settings_body
-    assert 'state.ui.provider.status === "unavailable"' in sync_auth_controls_body
-    assert "Boolean(state.ui.provider.providerId)" in sync_auth_controls_body
-    assert "provider_id: state.ui.provider.providerId" in save_provider_settings_body
-    assert "provider_id: PROVIDER_SETTINGS_DEFAULT.providerId" not in save_provider_settings_body
-    assert 'state.ui.provider.status === "unavailable"' in save_provider_settings_body
-    assert "Provider settings are temporarily unavailable. Retry before saving." in save_provider_settings_body
-    assert "providerId: null" in handle_provider_settings_failure_body
-
-
-def test_console_assets_keep_auth_signed_in_when_provider_settings_load_fails() -> None:
-    client = make_client()
-
-    script = client.get("/static/app.js").text
-    restore_session_body = extract_function_body(script, "restoreSession")
-    load_auth_workspace_body = extract_function_body(script, "loadAuthWorkspace")
-    register_auth_body = extract_function_body(script, "registerAuth")
-    login_auth_body = extract_function_body(script, "loginAuth")
-
-    assert "handleProviderSettingsLoadFailure" in script
-    assert 'setAuthStatus(`Signed in as ${state.auth.user.email}`, "ok");' in restore_session_body
-    assert "clearSession();" in restore_session_body
-    assert "handleProviderSettingsLoadFailure(error);" in load_auth_workspace_body
-    assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in register_auth_body
-    assert "await loadAuthWorkspace();" in register_auth_body
-    assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in login_auth_body
-    assert "await loadAuthWorkspace();" in login_auth_body
-
-
-def test_console_provider_settings_unavailable_state_disables_save_and_shows_retry_copy() -> None:
-    client = make_client()
-
-    script = client.get("/static/app.js").text
-    render_provider_settings_body = extract_function_body(script, "renderProviderSettings")
-    sync_auth_controls_body = extract_function_body(script, "syncAuthControls")
-    save_provider_settings_body = extract_function_body(script, "saveProviderSettings")
-
-    assert 'provider.status === "unavailable"' in render_provider_settings_body
-    assert '$("providerStatusBadge").textContent = "Unavailable";' in render_provider_settings_body
-    assert "Provider settings are temporarily unavailable" in render_provider_settings_body
-    assert 'state.ui.provider.status !== "unavailable"' in sync_auth_controls_body
-    assert "Provider settings are temporarily unavailable. Retry before saving." in save_provider_settings_body
+    assert "renderRecentActivity" in script
+    assert "recent_activity_by_buddy" in project_workspace_body
+    assert 'state.workspace.recentActivity = buddyId ? stateMemory.recent_activity_by_buddy?.[buddyId] || [] : [];' in project_workspace_body
+    assert 'state.workspace.recentActivity = [];' in clear_session_body
+    assert ".slice().reverse()" in render_recent_activity_body
+    assert "api_key" not in script
+    assert "agentManagementPanel" not in script
+    assert "providerSettingsPanel" not in script
+    assert "costGovernancePanel" not in script
 
 
 def test_console_assets_support_session_aware_auth_and_state_memory_client_flow() -> None:
@@ -365,6 +265,7 @@ def test_console_assets_keep_signed_out_workspace_auth_only_when_sync_snapshot_c
     assert "state.workspace.confirmedItems = [];" in project_workspace_body
     assert "state.workspace.pendingProposals = [];" in project_workspace_body
     assert "state.workspace.latestQuery = null;" in project_workspace_body
+    assert "state.workspace.recentActivity = [];" in project_workspace_body
     assert "state.workspace.traces = [];" in project_workspace_body
     assert "state.workspace.costSummary = {};" in project_workspace_body
 
@@ -374,15 +275,24 @@ def test_console_assets_render_evidence_and_details_basis_for_current_answer() -
 
     html = client.get("/console").text
     script = client.get("/static/app.js").text
+    render_details_drawer_body = extract_function_body(script, "renderDetailsDrawer")
 
     assert 'id="answerBasisTitle"' in html
     assert 'id="answerBasisQuestion"' in html
     assert 'id="answerBasisSummary"' in html
     assert 'id="answerBasisEvidenceList"' in html
+    assert 'id="buddyActivityList"' in html
     assert "renderAnswerBasisPanel" in script
+    assert "renderRecentActivity" in script
     assert "item.source" in script
     assert "item.last_seen_at" in script
     assert "latestQuery.answer_type" in script
+    assert "traceTimeline" not in script
+    assert "runtimeHealth" not in script
+    assert "tokenUsage" not in script
+    assert "modelCost" not in script
+    assert "monthCost" not in script
+    assert "renderAnswerBasisPanel();" in render_details_drawer_body
 
 
 def test_console_styles_define_single_column_mobile_first_experience_shell() -> None:

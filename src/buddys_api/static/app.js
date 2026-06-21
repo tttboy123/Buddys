@@ -5,15 +5,6 @@ const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
 const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
 const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
-const PROVIDER_SETTINGS_DEFAULT = {
-  providerId: "minimax-openai",
-  displayName: "MiniMax OpenAI Compatible",
-  defaultModel: "MiniMax-M3",
-  configured: false,
-  status: "unconfigured",
-  loaded: false,
-  errorMessage: "",
-};
 
 const state = {
   auth: {
@@ -23,10 +14,10 @@ const state = {
   workspace: {
     buddyId: null,
     buddies: [],
-    agents: [],
     confirmedItems: [],
     pendingProposals: [],
     latestQuery: null,
+    recentActivity: [],
     proactiveHint: null,
     summary: {},
     traces: [],
@@ -38,7 +29,6 @@ const state = {
     detailsOpen: false,
     dismissedHintKey: null,
     proactiveHint: null,
-    provider: { ...PROVIDER_SETTINGS_DEFAULT },
     photo: {
       base64: null,
       mediaType: null,
@@ -172,10 +162,10 @@ function clearSession() {
   state.auth.user = null;
   state.workspace.buddyId = null;
   state.workspace.buddies = [];
-  state.workspace.agents = [];
   state.workspace.confirmedItems = [];
   state.workspace.pendingProposals = [];
   state.workspace.latestQuery = null;
+  state.workspace.recentActivity = [];
   state.workspace.proactiveHint = null;
   state.workspace.summary = {};
   state.workspace.traces = [];
@@ -185,7 +175,6 @@ function clearSession() {
   state.ui.detailsOpen = false;
   state.ui.dismissedHintKey = null;
   state.ui.proactiveHint = null;
-  state.ui.provider = { ...PROVIDER_SETTINGS_DEFAULT };
   state.ui.photo = { base64: null, mediaType: null, previewUrl: null, fileName: null };
   state.ui.voice = { transcript: "", status: "idle", supported: voiceRecognitionSupported(), recording: false };
   localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -200,11 +189,6 @@ function syncAuthControls() {
   const hasBuddy = Boolean(state.workspace.buddyId);
   const hasPhoto = Boolean(state.ui.photo.base64);
   const hasVoiceTranscript = Boolean(state.ui.voice.transcript.trim());
-  const providerSettingsUnavailable = state.ui.provider.status === "unavailable";
-  const canSaveProviderSettings =
-    signedIn &&
-    state.ui.provider.status !== "unavailable" &&
-    Boolean(state.ui.provider.providerId);
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
@@ -223,9 +207,6 @@ function syncAuthControls() {
   $("querySubmitButton").disabled = !hasBuddy;
   $("proposalCorrectionInput").disabled = !hasBuddy || !selectedProposal();
   $("submitCorrectionButton").disabled = !hasBuddy || !selectedProposal();
-  $("providerDisplayNameInput").disabled = !signedIn;
-  $("providerModelInput").disabled = !signedIn;
-  $("saveProviderSettingsButton").disabled = providerSettingsUnavailable || !canSaveProviderSettings;
 }
 
 function renderAuthRail() {
@@ -318,93 +299,6 @@ function renderCaptureComposer() {
     $("photoPreviewImage").removeAttribute("src");
   }
   syncAuthControls();
-}
-
-function renderProviderSettings() {
-  const provider = state.ui.provider;
-  $("providerSettingsPanel").dataset.status = provider.status || "signed_out";
-  $("providerDisplayNameInput").value = provider.displayName;
-  $("providerModelInput").value = provider.defaultModel;
-  $("providerSecretNotice").dataset.tone = provider.status === "unavailable" ? "error" : provider.configured ? "ok" : "muted";
-
-  if (!isAuthenticated()) {
-    $("providerStatusBadge").textContent = "Signed out";
-    $("providerSettingsStatus").textContent = "Login to configure provider settings.";
-    syncAuthControls();
-    return;
-  }
-
-  if (provider.status === "unavailable") {
-    $("providerStatusBadge").textContent = "Unavailable";
-    $("providerSettingsStatus").textContent = provider.errorMessage || "Provider settings are temporarily unavailable.";
-  } else if (!provider.loaded) {
-    $("providerStatusBadge").textContent = "Loading";
-    $("providerSettingsStatus").textContent = "Loading provider settings...";
-  } else if (provider.configured) {
-    $("providerStatusBadge").textContent = "Configured";
-    $("providerSettingsStatus").textContent = `${provider.displayName} is configured for this account.`;
-  } else {
-    $("providerStatusBadge").textContent = "Unconfigured";
-    $("providerSettingsStatus").textContent = "No account-level provider override yet. Save safe metadata to configure one.";
-  }
-  syncAuthControls();
-}
-
-function formatAgentRole(role) {
-  return (
-    {
-      "runtime": "Runtime",
-      "hardware_simulator": "Hardware simulator",
-      "cost_agent": "Cost agent",
-      "verifier": "Verifier",
-      "doc_progress": "Doc progress",
-      "adapter": "Adapter",
-    }[role] || role
-  );
-}
-
-function whitelistAgentSummary(agent) {
-  return {
-    agent_id: agent.agent_id,
-    name: agent.name,
-    role: agent.role,
-    status: agent.status,
-    version: agent.version,
-    last_seen: agent.last_seen,
-  };
-}
-
-function renderAgentManagement() {
-  const list = $("agentManagementList");
-  list.replaceChildren();
-
-  if (!isAuthenticated()) {
-    $("agentManagementStatus").textContent = "Login to view agent summaries.";
-    const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No agent summaries yet.";
-    list.appendChild(emptyItem);
-    return;
-  }
-
-  const agents = state.workspace.agents || [];
-  $("agentManagementStatus").textContent = agents.length
-    ? `${agents.length} agent summaries for this account.`
-    : "No agent summaries yet.";
-
-  if (!agents.length) {
-    const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No agent summaries yet.";
-    list.appendChild(emptyItem);
-    return;
-  }
-
-  agents.forEach((agent) => {
-    const item = document.createElement("li");
-    appendLine(item, `${agent.name} · ${formatAgentRole(agent.role)} · ${agent.status}`);
-    appendLine(item, `Version: ${agent.version || "-"}`, "evidence-line");
-    appendLine(item, `Heartbeat: ${agent.last_seen || "Never"}`, "evidence-line");
-    list.appendChild(item);
-  });
 }
 
 function voiceRecognitionSupported() {
@@ -617,6 +511,49 @@ function renderLatestAnswer() {
   );
 }
 
+function formatRecentActivity(activity) {
+  const itemNames = activity.basis?.item_names?.join(" / ");
+  if (activity.kind === "capture_confirmed") {
+    const changeType = activity.basis?.change_type || "saved";
+    return itemNames ? `Saved ${changeType}: ${itemNames}` : `Saved ${changeType}.`;
+  }
+  if (activity.kind === "proposal_waiting") {
+    const unrecognizedCount = activity.basis?.unrecognized?.length || 0;
+    if (itemNames && unrecognizedCount) {
+      return `Waiting for review: ${itemNames} (${unrecognizedCount} unrecognized part${unrecognizedCount === 1 ? "" : "s"})`;
+    }
+    return itemNames ? `Waiting for review: ${itemNames}` : "Waiting for review.";
+  }
+  if (activity.kind === "query_answered") {
+    return activity.basis?.question ? `Answered: ${activity.basis.question}` : "Answered your latest question.";
+  }
+  return activity.summary || "Buddy recorded a recent action.";
+}
+
+function renderRecentActivity() {
+  const activities = (state.workspace.recentActivity || []).slice().reverse();
+  const status = $("buddyActivityStatus");
+
+  if (!isAuthenticated()) {
+    status.textContent = "Login to see Buddy's latest saved updates and answers.";
+    renderTextList("buddyActivityList", [], "No recent Buddy activity yet.", () => "");
+    return;
+  }
+  if (!state.workspace.buddyId) {
+    status.textContent = "Create your first Buddy to see recent activity and answers.";
+    renderTextList("buddyActivityList", [], "No recent Buddy activity yet.", () => "");
+    return;
+  }
+
+  status.textContent = activities.length
+    ? "Buddy shows the latest saved updates, pending reviews, and answers here."
+    : "Buddy will list the latest saved updates and answers here.";
+
+  renderTextList("buddyActivityList", activities, "No recent Buddy activity yet.", (activity) => {
+    return formatRecentActivity(activity);
+  });
+}
+
 function currentProactiveHint() {
   const hint = state.workspace.proactiveHint;
   if (!hint) {
@@ -688,17 +625,6 @@ function renderAnswerBasisPanel() {
 function renderDetailsDrawer() {
   $("detailsDrawer").open = state.ui.detailsOpen;
   renderAnswerBasisPanel();
-
-  const timelineItems = state.workspace.traces.slice(-5).map((trace) => {
-    const status = trace.tool_result_status || trace.permission_policy_result || "captured";
-    return `${trace.created_at} · ${status}`;
-  });
-  renderTextList("traceTimeline", timelineItems, "Waiting for state-memory activity.", (item) => item);
-
-  $("runtimeHealth").textContent = state.workspace.buddyId ? "runtime ok" : "awaiting workspace";
-  $("tokenUsage").textContent = String(state.workspace.costSummary.total_tokens || 0);
-  $("modelCost").textContent = money(costEventCny(state.workspace.costSummary || {}));
-  $("monthCost").textContent = `month cost ${money(costEventCny(state.workspace.costSummary || {}))}`;
 }
 
 function renderExperienceShell() {
@@ -708,8 +634,7 @@ function renderExperienceShell() {
   renderCaptureComposer();
   renderProposalInbox();
   renderLatestAnswer();
-  renderProviderSettings();
-  renderAgentManagement();
+  renderRecentActivity();
   renderProactiveMemoryCard();
   renderDetailsDrawer();
 }
@@ -847,92 +772,7 @@ async function createMyBuddy() {
 
 async function loadAuthWorkspace() {
   await loadAuthBuddies();
-  try {
-    await loadProviderSettings();
-  } catch (error) {
-    handleProviderSettingsLoadFailure(error);
-  }
   await loadSyncSnapshot();
-}
-
-async function loadProviderSettings() {
-  if (!isAuthenticated()) {
-    state.ui.provider = { ...PROVIDER_SETTINGS_DEFAULT };
-    renderProviderSettings();
-    return;
-  }
-  const payload = await requestJson("/providers", { headers: {} });
-  const config = (payload.configs || []).find((item) => item.provider_type === "openai_compatible") || null;
-  state.ui.provider = {
-    ...PROVIDER_SETTINGS_DEFAULT,
-    providerId: config?.provider_id || PROVIDER_SETTINGS_DEFAULT.providerId,
-    displayName: config?.display_name || PROVIDER_SETTINGS_DEFAULT.displayName,
-    defaultModel: config?.default_model || PROVIDER_SETTINGS_DEFAULT.defaultModel,
-    configured: Boolean(config?.configured),
-    status: config?.configured ? "configured" : "unconfigured",
-    loaded: true,
-    errorMessage: "",
-  };
-  renderProviderSettings();
-}
-
-function handleProviderSettingsLoadFailure(error) {
-  state.ui.provider = {
-    ...state.ui.provider,
-    providerId: null,
-    loaded: true,
-    configured: false,
-    status: "unavailable",
-    errorMessage: `Provider settings are temporarily unavailable: ${error.message}`,
-  };
-  renderProviderSettings();
-}
-
-async function saveProviderSettings() {
-  if (!isAuthenticated()) {
-    setAuthStatus("Login before saving provider settings.", "error");
-    return;
-  }
-  if (state.ui.provider.status === "unavailable" || !state.ui.provider.providerId) {
-    $("providerSettingsStatus").textContent = "Provider settings are temporarily unavailable. Retry before saving.";
-    syncAuthControls();
-    return;
-  }
-  const displayName = $("providerDisplayNameInput").value.trim();
-  const defaultModel = $("providerModelInput").value.trim();
-  if (!displayName || !defaultModel) {
-    $("providerSettingsStatus").textContent = "Display name and model are required.";
-    return;
-  }
-  try {
-    const result = await requestJson("/providers", {
-      method: "POST",
-      body: JSON.stringify({
-        provider_id: state.ui.provider.providerId,
-        display_name: displayName,
-        provider_type: "openai_compatible",
-        base_url: "https://api.minimax.io/v1",
-        api_key_env_var: "OPENAI_API_KEY",
-        default_model: defaultModel,
-      }),
-    });
-    state.ui.provider = {
-      ...PROVIDER_SETTINGS_DEFAULT,
-      providerId: result.provider_id,
-      displayName: result.display_name,
-      defaultModel: result.default_model,
-      configured: Boolean(result.configured),
-      status: result.configured ? "configured" : "unconfigured",
-      loaded: true,
-      errorMessage: "",
-    };
-    $("providerSettingsStatus").textContent = result.configured
-      ? `${result.display_name} is configured for this account.`
-      : `${result.display_name} saved. Waiting for server-side OPENAI_API_KEY.`;
-    renderProviderSettings();
-  } catch (error) {
-    $("providerSettingsStatus").textContent = `Provider settings failed: ${error.message}`;
-  }
 }
 
 function projectWorkspace(snapshot) {
@@ -940,10 +780,10 @@ function projectWorkspace(snapshot) {
     state.workspace.stateRevision = 0;
     state.workspace.buddies = [];
     state.workspace.buddyId = null;
-    state.workspace.agents = [];
     state.workspace.confirmedItems = [];
     state.workspace.pendingProposals = [];
     state.workspace.latestQuery = null;
+    state.workspace.recentActivity = [];
     state.workspace.proactiveHint = null;
     state.workspace.summary = {};
     state.workspace.traces = [];
@@ -952,7 +792,6 @@ function projectWorkspace(snapshot) {
   } else {
     state.workspace.stateRevision = snapshot.state_revision || 0;
     state.workspace.buddies = snapshot.buddies || [];
-    state.workspace.agents = (snapshot.agents || []).map(whitelistAgentSummary);
     if (state.workspace.buddies.length && !state.workspace.buddyId) {
       state.workspace.buddyId = state.workspace.buddies[0].buddy_id;
     }
@@ -962,6 +801,7 @@ function projectWorkspace(snapshot) {
     state.workspace.confirmedItems = buddyId ? stateMemory.items_by_buddy?.[buddyId] || [] : [];
     state.workspace.pendingProposals = buddyId ? stateMemory.pending_proposals_by_buddy?.[buddyId] || [] : [];
     state.workspace.latestQuery = buddyId ? stateMemory.latest_query_by_buddy?.[buddyId] || null : null;
+    state.workspace.recentActivity = buddyId ? stateMemory.recent_activity_by_buddy?.[buddyId] || [] : [];
     state.workspace.proactiveHint = buddyId ? stateMemory.proactive_hint_by_buddy?.[buddyId] || null : null;
     state.workspace.summary = buddyId ? stateMemory.summary_by_buddy?.[buddyId] || {} : {};
     state.workspace.traces = snapshot.traces || [];
@@ -1173,14 +1013,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("querySubmitButton").addEventListener("click", submitQuery);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
-  $("saveProviderSettingsButton").addEventListener("click", saveProviderSettings);
   $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);
-  $("providerDisplayNameInput").addEventListener("input", () => {
-    state.ui.provider.displayName = $("providerDisplayNameInput").value;
-  });
-  $("providerModelInput").addEventListener("input", () => {
-    state.ui.provider.defaultModel = $("providerModelInput").value;
-  });
   $("detailsDrawer").addEventListener("toggle", () => {
     state.ui.detailsOpen = $("detailsDrawer").open;
   });

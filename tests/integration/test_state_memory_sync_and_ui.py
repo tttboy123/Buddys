@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
 from buddys_api.main import create_app
+from buddys_api.providers.openai_compatible_provider import ProviderUsage, StateMemoryQueryUnderstanding
+from buddys_api.state_memory_models import StateMemoryDelta
 
 
 def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_existing_revision_model(
@@ -68,6 +70,7 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
+        "recent_activity_by_buddy": {},
     }
     assert unauth_snapshot["state_memory"] == {
         "items_by_buddy": {},
@@ -75,6 +78,7 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
+        "recent_activity_by_buddy": {},
     }
     assert buddy_id not in str(other_snapshot)
     assert buddy_id not in str(unauth_snapshot)
@@ -113,3 +117,81 @@ def test_sync_snapshot_projects_single_traceable_proactive_memory_hint(tmp_path)
     assert hint["message"]
     assert hint["basis"]["item_names"] == ["鸡蛋"]
     assert hint["kind"] == "consumption_inference"
+
+
+def test_sync_snapshot_projects_photo_evidence_details_for_auth_workspace(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "photo-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FakePhotoProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="牛奶",
+                        operation="upsert",
+                        quantity=2,
+                        unit="盒",
+                        category="ingredient",
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+        def understand_state_memory_query(self, *, question):
+            return StateMemoryQueryUnderstanding(
+                answer_type="have_item",
+                subject_name="牛奶",
+                usage=ProviderUsage(input_tokens=8, output_tokens=6, estimated=False),
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FakePhotoProvider()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/photo",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "冰箱照片", "image_base64": "aGVsbG8=", "image_media_type": "image/png"},
+    )
+    assert capture.status_code == 201
+
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有牛奶吗"},
+    )
+    assert query.status_code == 200
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    latest_query = snapshot["state_memory"]["latest_query_by_buddy"][buddy["buddy_id"]]
+    hint = snapshot["state_memory"]["proactive_hint_by_buddy"][buddy["buddy_id"]]
+    recent_activity = snapshot["state_memory"]["recent_activity_by_buddy"][buddy["buddy_id"]]
+
+    assert latest_query["summary"] == "还有牛奶。"
+    assert latest_query["evidence_item_ids"]
+    assert latest_query["evidence_items"][0]["name"] == "牛奶"
+    assert latest_query["evidence_items"][0]["source"] == "photo"
+    assert latest_query["evidence_items"][0]["last_seen_at"]
+    assert hint["kind"] == "consumption_inference"
+    assert hint["basis"]["item_names"] == ["牛奶"]
+    assert recent_activity[0]["kind"] in {"capture_confirmed", "proposal_waiting", "query_answered"}
+    assert any(activity["kind"] == "query_answered" for activity in recent_activity)
+    assert "api_key" not in str(recent_activity).lower()
+    assert "capabilities" not in str(recent_activity).lower()

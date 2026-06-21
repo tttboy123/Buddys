@@ -336,21 +336,30 @@ def _state_memory_projection(
 
     items_by_buddy_models: dict[str, list[Any]] = {}
     pending_by_buddy_models: dict[str, list[Any]] = {}
+    history_by_buddy_models: dict[str, list[Any]] = {}
     summary_by_buddy: dict[str, dict[str, Any]] = {}
 
     for buddy in buddies:
         items = state_memory_store.list_items(user_id=user_id, buddy_id=buddy.buddy_id)
         pending = state_memory_store.list_pending_proposals(user_id=user_id, buddy_id=buddy.buddy_id)
+        history = state_memory_store.list_history(user_id=user_id, buddy_id=buddy.buddy_id)
         items_by_buddy_models[buddy.buddy_id] = items
         pending_by_buddy_models[buddy.buddy_id] = pending
+        history_by_buddy_models[buddy.buddy_id] = history
         summary_by_buddy[buddy.buddy_id] = {
             "confirmed_item_count": len(items),
             "pending_proposal_count": len(pending),
             "last_state_change_at": _latest_timestamp(
-                [item.updated_at for item in items] + [proposal.updated_at for proposal in pending]
+                [item.updated_at for item in items]
+                + [proposal.updated_at for proposal in pending]
+                + [entry.created_at for entry in history]
             ),
         }
 
+    latest_queries_by_buddy = _latest_state_memory_queries_by_buddy(
+        traces=traces,
+        items_by_buddy=items_by_buddy_models,
+    )
     return {
         "items_by_buddy": {
             buddy_id: [_safe_dump(item) for item in items]
@@ -367,11 +376,13 @@ def _state_memory_projection(
             for buddy_id, summary in summary_by_buddy.items()
             if summary["confirmed_item_count"] or summary["pending_proposal_count"]
         },
-        "latest_query_by_buddy": _latest_state_memory_queries_by_buddy(
-            traces=traces,
-            items_by_buddy=items_by_buddy_models,
-        ),
+        "latest_query_by_buddy": latest_queries_by_buddy,
         "proactive_hint_by_buddy": _proactive_state_memory_hints_by_buddy(items_by_buddy_models),
+        "recent_activity_by_buddy": _recent_state_memory_activity_by_buddy(
+            history_by_buddy=history_by_buddy_models,
+            pending_by_buddy=pending_by_buddy_models,
+            latest_query_by_buddy=latest_queries_by_buddy,
+        ),
     }
 
 
@@ -382,6 +393,7 @@ def _empty_state_memory_projection() -> dict[str, Any]:
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
+        "recent_activity_by_buddy": {},
     }
 
 
@@ -448,6 +460,65 @@ def _proactive_state_memory_hints_by_buddy(items_by_buddy: dict[str, list[Any]])
     return hints
 
 
+def _recent_state_memory_activity_by_buddy(
+    *,
+    history_by_buddy: dict[str, list[Any]],
+    pending_by_buddy: dict[str, list[Any]],
+    latest_query_by_buddy: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    activity_by_buddy: dict[str, list[dict[str, Any]]] = {}
+    buddy_ids = set(history_by_buddy) | set(pending_by_buddy) | set(latest_query_by_buddy)
+    for buddy_id in buddy_ids:
+        activity: list[dict[str, Any]] = []
+        for entry in history_by_buddy.get(buddy_id, [])[-5:]:
+            activity.append(
+                {
+                    "kind": "capture_confirmed",
+                    "summary": _history_activity_summary(entry),
+                    "created_at": entry.created_at,
+                    "basis": {
+                        "item_names": [entry.item_name],
+                        "change_type": entry.change_type,
+                    },
+                }
+            )
+        for proposal in pending_by_buddy.get(buddy_id, [])[-3:]:
+            item_names = [delta.item_name for delta in proposal.deltas if delta.item_name]
+            activity.append(
+                {
+                    "kind": "proposal_waiting",
+                    "summary": _proposal_activity_summary(proposal, item_names),
+                    "created_at": proposal.updated_at,
+                    "basis": {
+                        "item_names": item_names,
+                        "unrecognized": list(proposal.unrecognized),
+                    },
+                }
+            )
+        latest_query = latest_query_by_buddy.get(buddy_id)
+        if latest_query is not None:
+            evidence_names = [item["name"] for item in latest_query.get("evidence_items", []) if item.get("name")]
+            basis_item_names = evidence_names or list(latest_query.get("missing_items", [])) or [
+                latest_query.get("subject_name")
+            ]
+            activity.append(
+                {
+                    "kind": "query_answered",
+                    "summary": latest_query.get("summary"),
+                    "created_at": latest_query.get("created_at"),
+                    "basis": {
+                        "item_names": [name for name in basis_item_names if name],
+                        "question": latest_query.get("question"),
+                    },
+                }
+            )
+        activity = [entry for entry in activity if entry.get("created_at") and entry.get("summary")]
+        activity.sort(key=lambda entry: entry["created_at"])
+        if activity:
+            activity_by_buddy[buddy_id] = activity[-5:]
+    return activity_by_buddy
+
+
 def _build_state_memory_hint(items: list[Any]) -> dict[str, Any] | None:
     low_items = [
         item
@@ -467,6 +538,33 @@ def _build_state_memory_hint(items: list[Any]) -> dict[str, Any] | None:
             "last_seen_at": item.last_seen_at,
         },
     }
+
+
+def _history_activity_summary(entry: Any) -> str:
+    quantity_after = _format_state_memory_quantity(entry.quantity_after, entry.unit_after)
+    if entry.change_type in {"consume", "consumed"}:
+        return f"Buddy noted that {entry.item_name} was used{quantity_after}."
+    if entry.change_type in {"remove", "removed"}:
+        return f"Buddy removed {entry.item_name} from confirmed state."
+    if quantity_after:
+        return f"Buddy saved {entry.item_name} as {quantity_after}."
+    return f"Buddy saved {entry.item_name}."
+
+
+def _proposal_activity_summary(proposal: Any, item_names: list[str]) -> str:
+    if item_names:
+        return f"Buddy is waiting for review on {' / '.join(item_names)}."
+    return f"Buddy is waiting for review on a {proposal.source} update."
+
+
+def _format_state_memory_quantity(quantity: Any, unit: Any) -> str:
+    if quantity is None:
+        return ""
+    if float(quantity).is_integer():
+        value = str(int(quantity))
+    else:
+        value = str(quantity)
+    return f" {value}{unit or ''}"
 
 
 def _latest_timestamp(timestamps: list[str]) -> str | None:

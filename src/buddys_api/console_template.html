@@ -227,44 +227,16 @@
         </ul>
       </section>
 
-      <section id="providerSettingsPanel" class="experience-panel" aria-labelledby="providerSettingsTitle">
+      <section id="buddyActivityPanel" class="experience-panel" aria-labelledby="buddyActivityTitle">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Settings</p>
-            <h2 id="providerSettingsTitle">Provider settings</h2>
-          </div>
-          <strong id="providerStatusBadge">Signed out</strong>
-        </div>
-        <p id="providerSecretNotice" class="support-copy">
-          Secrets stay on the server. This surface only saves safe provider metadata for your Buddy.
-        </p>
-        <label class="field">
-          <span>Display name</span>
-          <input id="providerDisplayNameInput" type="text" placeholder="MiniMax OpenAI Compatible" disabled />
-        </label>
-        <label class="field">
-          <span>Model</span>
-          <input id="providerModelInput" type="text" placeholder="MiniMax-M3" disabled />
-        </label>
-        <p id="providerSettingsStatus" class="support-copy">Login to configure provider settings.</p>
-        <div class="button-row">
-          <button id="saveProviderSettingsButton" class="secondary-button" type="button" disabled>
-            Save provider settings
-          </button>
-        </div>
-      </section>
-
-      <section id="agentManagementPanel" class="experience-panel" aria-labelledby="agentManagementTitle">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Operators</p>
-            <h2 id="agentManagementTitle">Agent management</h2>
+            <p class="eyebrow">What Buddy just did</p>
+            <h2 id="buddyActivityTitle">Recent activity</h2>
           </div>
         </div>
-        <p class="support-copy">Safe summary only. Buddy shows role, status, version, and heartbeat without exposing secrets.</p>
-        <p id="agentManagementStatus" class="support-copy">Login to view agent summaries.</p>
-        <ul id="agentManagementList" class="state-list">
-          <li>No agent summaries yet.</li>
+        <p id="buddyActivityStatus" class="support-copy">Buddy will list the latest saved updates and answers here.</p>
+        <ul id="buddyActivityList" class="state-list">
+          <li>No recent Buddy activity yet.</li>
         </ul>
       </section>
 
@@ -283,45 +255,18 @@
       <details id="detailsDrawer" class="details-drawer">
         <summary>Why this answer / details</summary>
         <div class="details-stack">
-          <section id="answerBasisPanel" class="experience-panel detail-panel" aria-labelledby="answerBasisTitle">
-            <p class="eyebrow">Answer basis</p>
-            <h2 id="answerBasisTitle">Why Buddy answered this</h2>
-            <p id="answerBasisQuestion" class="support-copy">No current answer basis.</p>
-            <p id="answerBasisSummary" class="support-copy">Ask Buddy something to inspect evidence details.</p>
-            <ul id="answerBasisEvidenceList" class="state-list">
-              <li>No answer evidence yet.</li>
-            </ul>
-          </section>
-
-          <section class="experience-panel detail-panel" aria-labelledby="traceTitle">
-            <p class="eyebrow">Action Trace</p>
-            <h2 id="traceTitle">Action Trace</h2>
-            <ol id="traceTimeline" class="timeline">
-              <li>Waiting for state-memory activity.</li>
-            </ol>
-          </section>
-
-          <section class="experience-panel detail-panel" aria-labelledby="costTitle">
-            <p class="eyebrow">Cost</p>
-            <h2 id="costTitle">Cost snapshot</h2>
-            <div class="detail-metrics">
-              <div>
-                <span class="field-label">Runtime</span>
-                <strong id="runtimeHealth">runtime checking</strong>
-              </div>
-              <div>
-                <span class="field-label">Tokens</span>
-                <strong id="tokenUsage">0</strong>
-              </div>
-              <div>
-                <span class="field-label">Last run</span>
-                <strong id="modelCost">¥0.00</strong>
-              </div>
-              <div>
-                <span class="field-label">Month</span>
-                <strong id="monthCost">month cost ¥0.00</strong>
-              </div>
-            </div>
+          <section id="buddyThinkingPanel" class="experience-panel detail-panel" aria-labelledby="buddyThinkingTitle">
+            <p class="eyebrow">Why Buddy thinks that</p>
+            <h2 id="buddyThinkingTitle">Why Buddy thinks that</h2>
+            <section id="answerBasisPanel" aria-labelledby="answerBasisTitle">
+              <p class="eyebrow">Answer basis</p>
+              <h3 id="answerBasisTitle">Why Buddy answered this</h3>
+              <p id="answerBasisQuestion" class="support-copy">No current answer basis.</p>
+              <p id="answerBasisSummary" class="support-copy">Ask Buddy something to inspect evidence details.</p>
+              <ul id="answerBasisEvidenceList" class="state-list">
+                <li>No answer evidence yet.</li>
+              </ul>
+            </section>
           </section>
         </div>
       </details>
