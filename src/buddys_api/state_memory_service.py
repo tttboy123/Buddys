@@ -853,18 +853,19 @@ def _sanitize_capture_deltas(
 
 
 def _content_supports_quantity(*, content: str, item_name: str) -> bool:
-    normalized_item_name = item_name.strip()
+    normalized_item_name = _normalize_item_name(item_name)
     if not normalized_item_name:
         return False
-    item_pattern = re.escape(normalized_item_name)
     quantity_pattern = rf"{_QUANTITY_NUMBER_PATTERN}\s*(?:{_QUANTITY_UNIT_PATTERN})?"
-    before_item = rf"{quantity_pattern}\s*{item_pattern}"
-    after_item = rf"{item_pattern}\s*{quantity_pattern}"
-    return re.search(before_item, content, flags=re.IGNORECASE) is not None or re.search(
-        after_item,
-        content,
-        flags=re.IGNORECASE,
-    ) is not None
+    for candidate_name in sorted(_requested_name_forms(item_name), key=len, reverse=True):
+        item_pattern = re.escape(candidate_name)
+        before_item = rf"{quantity_pattern}\s*{item_pattern}"
+        after_item = rf"{item_pattern}\s*{quantity_pattern}"
+        if re.search(before_item, content, flags=re.IGNORECASE) is not None:
+            return True
+        if re.search(after_item, content, flags=re.IGNORECASE) is not None:
+            return True
+    return False
 
 
 def _normalize_item_name(name: str) -> str:

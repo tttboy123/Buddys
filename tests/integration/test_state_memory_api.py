@@ -511,6 +511,54 @@ def test_state_memory_capture_preserves_explicit_quantity_when_user_said_amount(
     assert delta["unit"] == "盒"
 
 
+def test_state_memory_capture_preserves_quantity_when_provider_uses_generic_synonym_name(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "capture-synonym-amount@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FakeProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="猪肉",
+                        operation="upsert",
+                        quantity=1,
+                        unit="斤",
+                        category="肉类",
+                        confidence=0.9,
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FakeProvider()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了一斤五花肉"},
+    )
+
+    assert response.status_code == 201
+    delta = response.json()["proposal"]["deltas"][0]
+    assert delta["quantity"] == 1
+    assert delta["unit"] == "斤"
+
+
 def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_sync_events(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     owner_token = register(client, "owner@example.com")
