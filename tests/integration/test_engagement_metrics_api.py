@@ -104,6 +104,68 @@ def test_retention_summary_counts_post_activation_maintenance_windows_without_ra
     assert "content" not in str(body).lower()
 
 
+def test_retention_summary_counts_review_only_return_visits_as_maintenance(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_FOUNDER_METRICS_EMAIL_ALLOWLIST", "founder@example.com")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    founder = _register(client, "founder@example.com")
+
+    confirmed_user = _register(client, "review-confirm@example.com")
+    confirmed_buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {confirmed_user['token']}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    _seed_activation_sequence(
+        app,
+        user_id=confirmed_user["user_id"],
+        buddy_id=confirmed_buddy["buddy_id"],
+        base_time=datetime.now(timezone.utc) - timedelta(days=2),
+    )
+    _seed_maintenance_event(
+        app,
+        user_id=confirmed_user["user_id"],
+        buddy_id=confirmed_buddy["buddy_id"],
+        event_time=datetime.now(timezone.utc) - timedelta(hours=12),
+        event_type="proposal_confirmed",
+    )
+
+    corrected_user = _register(client, "review-correct@example.com")
+    corrected_buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {corrected_user['token']}"},
+        json={"name": "Pantry Buddy", "space_id": "pantry"},
+    ).json()
+    _seed_activation_sequence(
+        app,
+        user_id=corrected_user["user_id"],
+        buddy_id=corrected_buddy["buddy_id"],
+        base_time=datetime.now(timezone.utc) - timedelta(days=4),
+    )
+    _seed_maintenance_event(
+        app,
+        user_id=corrected_user["user_id"],
+        buddy_id=corrected_buddy["buddy_id"],
+        event_time=datetime.now(timezone.utc) - timedelta(hours=12),
+        event_type="proposal_corrected",
+    )
+
+    response = client.get(
+        "/metrics/retention-summary",
+        headers={"Authorization": f"Bearer {founder['token']}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["d1_active_users"] == 1
+    assert body["d3_active_users"] == 1
+    assert body["d7_active_users"] == 0
+    assert body["activated_users"] == 2
+
+
 def _register(client: TestClient, email: str) -> dict[str, str]:
     response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
     assert response.status_code == 201
@@ -161,12 +223,19 @@ def _seed_activation_sequence(app, *, user_id: str, buddy_id: str, base_time: da
     _set_event_time(app, query.event_id, base_time + timedelta(minutes=2))
 
 
-def _seed_maintenance_event(app, *, user_id: str, buddy_id: str, event_time: datetime) -> None:
+def _seed_maintenance_event(
+    app,
+    *,
+    user_id: str,
+    buddy_id: str,
+    event_time: datetime,
+    event_type: str = "capture_submitted",
+) -> None:
     event = app.state.engagement_metrics_store.record_event(
         user_id=user_id,
         buddy_id=buddy_id,
-        event_type="capture_submitted",
-        capture_source="voice",
+        event_type=event_type,
+        capture_source="voice" if event_type == "capture_submitted" else None,
     )
     _set_event_time(app, event.event_id, event_time)
 

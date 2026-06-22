@@ -1203,6 +1203,46 @@ def test_state_memory_activation_requires_ordered_capture_confirm_query_cycle(tm
     assert metrics.json()["activation"]["completed_first_capture_confirm_query"] is False
 
 
+def test_state_memory_activation_keeps_capture_confirm_progress_across_extra_capture(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "activation-extra-capture@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="capture_submitted",
+        capture_source="voice",
+    )
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="proposal_confirmed",
+    )
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="capture_submitted",
+        capture_source="conversation",
+    )
+    app.state.engagement_metrics_store.record_event(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        event_type="query_answered",
+        answer_type="have_item",
+    )
+
+    metrics = client.get("/metrics/engagement", headers={"Authorization": f"Bearer {token}"})
+
+    assert metrics.status_code == 200
+    assert metrics.json()["activation"]["completed_first_capture_confirm_query"] is True
+
+
 def test_state_memory_correct_rejects_negative_quantity_with_422(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")

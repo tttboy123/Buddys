@@ -154,7 +154,6 @@ def _first_activation_time(events: list[EngagementEvent]) -> datetime | None:
     for event in events:
         if event.event_type == "capture_submitted":
             has_capture = True
-            has_confirmation = False
             continue
         if event.event_type in {"proposal_confirmed", "proposal_corrected"} and has_capture:
             has_confirmation = True
@@ -173,7 +172,7 @@ def _has_maintenance_event_in_window(
     window_start = activation_time + timedelta(days=day)
     window_end = activation_time + timedelta(days=day + 1)
     for event in events:
-        if event.event_type not in {"capture_submitted", "query_answered"}:
+        if event.event_type not in {"capture_submitted", "query_answered", "proposal_confirmed", "proposal_corrected"}:
             continue
         event_time = datetime.fromisoformat(event.created_at)
         if window_start <= event_time < window_end:
