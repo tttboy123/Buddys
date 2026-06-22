@@ -433,6 +433,12 @@ function renderUnrecognizedList(parent, proposal) {
   parent.appendChild(block);
 }
 
+function proposalDeltaCopy(delta) {
+  const quantityCopy =
+    delta.quantity === null || delta.quantity === undefined ? "数量未输入" : formatQuantity(delta.quantity, delta.unit);
+  return `${delta.item_name} · ${delta.operation} · ${quantityCopy}`;
+}
+
 function renderProposalInbox() {
   renderTextList("stateMemoryPendingList", state.workspace.pendingProposals, DEFAULT_PENDING_EMPTY, (proposal) => {
     return `${proposal.content} · ${proposal.source}`;
@@ -462,6 +468,15 @@ function renderProposalInbox() {
     meta.className = "support-copy";
     meta.textContent = `${proposal.source} · ${proposal.deltas.length} structured item(s)`;
     item.appendChild(meta);
+
+    const deltaList = document.createElement("ul");
+    deltaList.className = "inline-list";
+    (proposal.deltas || []).forEach((delta) => {
+      const deltaItem = document.createElement("li");
+      deltaItem.textContent = proposalDeltaCopy(delta);
+      deltaList.appendChild(deltaItem);
+    });
+    item.appendChild(deltaList);
 
     renderUnrecognizedList(item, proposal);
 

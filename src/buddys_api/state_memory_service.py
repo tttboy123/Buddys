@@ -59,6 +59,11 @@ _GENERIC_ITEM_NAME_EXPANSIONS: dict[str, frozenset[str]] = {
     "猪肉": frozenset({"猪肉", "五花肉", "瘦肉", "里脊肉", "梅花肉"}),
 }
 
+_QUANTITY_NUMBER_PATTERN = r"(?:\d+(?:\.\d+)?|半|几|零|〇|一|二|两|三|四|五|六|七|八|九|十|百)"
+_QUANTITY_UNIT_PATTERN = (
+    r"(?:个|盒|瓶|包|袋|斤|公斤|千克|克|kg|g|升|l|ml|毫升|支|杯|罐|片|块|根|只|双|桶|听|张|盘|份|箱|颗|条|瓣|把)"
+)
+
 
 class StateMemoryService:
     def __init__(
@@ -146,7 +151,7 @@ class StateMemoryService:
             buddy_id=buddy_id,
             source=source,
             content=normalized_content,
-            deltas=deltas,
+            deltas=_sanitize_capture_deltas(source=source, content=normalized_content, deltas=deltas),
             unrecognized=unrecognized,
         )
         trace_id = self._record_capture_trace(
@@ -763,7 +768,7 @@ def _build_have_item_answer(*, item_name: str, items: list[StateMemoryItem]) -> 
         answer_type="have_item",
         subject_name=item_name,
         summary=(
-            f"还有{item_name}，但数量不确定。"
+            f"还有{item_name}，但数量未输入。"
             if has_item and all_available_quantities_unknown
             else (f"还有{item_name}。" if has_item else f"现在没有{item_name}。")
         ),
@@ -828,6 +833,38 @@ def _item_is_available(item: StateMemoryItem) -> bool:
     if item.status != "active":
         return False
     return item.quantity is None or item.quantity > 0
+
+
+def _sanitize_capture_deltas(
+    *,
+    source: StateMemoryCaptureSource,
+    content: str,
+    deltas: list[StateMemoryDelta],
+) -> list[StateMemoryDelta]:
+    if source == "photo":
+        return deltas
+    sanitized: list[StateMemoryDelta] = []
+    for delta in deltas:
+        if delta.operation == "upsert" and not _content_supports_quantity(content=content, item_name=delta.item_name):
+            sanitized.append(delta.model_copy(update={"quantity": None, "unit": None}))
+            continue
+        sanitized.append(delta)
+    return sanitized
+
+
+def _content_supports_quantity(*, content: str, item_name: str) -> bool:
+    normalized_item_name = item_name.strip()
+    if not normalized_item_name:
+        return False
+    item_pattern = re.escape(normalized_item_name)
+    quantity_pattern = rf"{_QUANTITY_NUMBER_PATTERN}\s*(?:{_QUANTITY_UNIT_PATTERN})?"
+    before_item = rf"{quantity_pattern}\s*{item_pattern}"
+    after_item = rf"{item_pattern}\s*{quantity_pattern}"
+    return re.search(before_item, content, flags=re.IGNORECASE) is not None or re.search(
+        after_item,
+        content,
+        flags=re.IGNORECASE,
+    ) is not None
 
 
 def _normalize_item_name(name: str) -> str:

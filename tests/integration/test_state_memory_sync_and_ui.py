@@ -156,7 +156,7 @@ def test_sync_snapshot_projects_unknown_quantity_without_fake_placeholder(tmp_pa
     latest_query = snapshot["state_memory"]["latest_query_by_buddy"][buddy["buddy_id"]]
 
     assert item["quantity"] is None
-    assert latest_query["summary"] == "还有牛奶，但数量不确定。"
+    assert latest_query["summary"] == "还有牛奶，但数量未输入。"
 
 
 def test_sync_snapshot_projects_photo_evidence_details_for_auth_workspace(tmp_path, monkeypatch) -> None:

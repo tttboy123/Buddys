@@ -174,6 +174,40 @@ def test_openai_compatible_provider_sends_multimodal_photo_capture_payload(monke
     }
 
 
+def test_openai_compatible_provider_capture_prompt_requires_null_quantity_when_user_did_not_say_amount(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "{\"deltas\":[],\"unrecognized\":[]}"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        provider_id="minimax-openai",
+        base_url="https://api.minimaxi.com/v1",
+        api_key_env_var="OPENAI_API_KEY",
+        model="MiniMax-M3",
+        transport=httpx.MockTransport(handler),
+    )
+
+    provider.parse_state_memory_capture(source="voice", content="我买了牛奶")
+    payload = json.loads(requests[0].content.decode("utf-8"))
+    system_prompt = payload["messages"][0]["content"]
+
+    assert "quantity" in system_prompt
+    assert "unit" in system_prompt
+    assert "必须返回 null" in system_prompt
+    assert "不得猜测 1 瓶、1 盒、1 个" in system_prompt
+
+
 def test_openai_compatible_provider_understands_recipe_query(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
 

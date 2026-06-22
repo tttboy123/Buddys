@@ -102,6 +102,8 @@ class OpenAICompatibleProvider:
                 "把用户输入解析成 `deltas` 和 `unrecognized`。"
                 "deltas 内每项必须包含 item_name, operation, quantity, unit, category, confidence, source。"
                 "operation 只能是 upsert/consume/remove。"
+                "如果用户没有明确说出数量，quantity 和 unit 必须返回 null。"
+                "不得猜测 1 瓶、1 盒、1 个。"
                 "无法可靠结构化的原文片段必须放进 unrecognized。"
             ),
             user_prompt=f"source={source}\ncontent={content}",
