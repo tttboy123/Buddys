@@ -655,6 +655,77 @@ def test_state_memory_capture_preserves_quantity_for_spoken_quantity_word(
     assert delta["unit"] == "个"
 
 
+def test_state_memory_query_matches_generic_name_to_modifier_prefixed_item(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "query-modified-milk@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FakeProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="纯牛奶",
+                        operation="upsert",
+                        quantity=2,
+                        unit="盒",
+                        category="饮品",
+                        confidence=0.9,
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+        def understand_state_memory_query(self, *, question):
+            return StateMemoryQueryUnderstanding(
+                answer_type="have_item",
+                subject_name="牛奶",
+                usage=ProviderUsage(input_tokens=8, output_tokens=6, estimated=False),
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FakeProvider()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了两盒纯牛奶"},
+    )
+    assert capture.status_code == 201
+
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有牛奶吗"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_type"] == "have_item"
+    assert body["has_item"] is True
+    assert body["summary"] == "还有牛奶。"
+    assert [item["name"] for item in body["evidence_items"]] == ["纯牛奶"]
+
+
 def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_sync_events(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     owner_token = register(client, "owner@example.com")

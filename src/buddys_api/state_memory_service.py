@@ -59,6 +59,16 @@ _GENERIC_ITEM_NAME_EXPANSIONS: dict[str, frozenset[str]] = {
     "猪肉": frozenset({"猪肉", "五花肉", "瘦肉", "里脊肉", "梅花肉"}),
 }
 
+_COMMON_ITEM_PREFIX_MODIFIERS: tuple[str, ...] = (
+    "无糖",
+    "低脂",
+    "全脂",
+    "脱脂",
+    "原味",
+    "纯",
+    "鲜",
+)
+
 _QUANTITY_NUMBER_PATTERN = r"(?:\d+(?:\.\d+)?|半|几|零|〇|一|二|两|俩|仨|三|四|五|六|七|八|九|十|百)"
 _QUANTITY_UNIT_PATTERN = (
     r"(?:个|盒|瓶|包|袋|斤|公斤|千克|克|kg|g|升|l|ml|毫升|支|杯|罐|片|块|根|只|双|桶|听|张|盘|份|箱|颗|条|瓣|把)"
@@ -874,7 +884,18 @@ def _normalize_item_name(name: str) -> str:
 
 
 def _item_matches_requested_name(*, item_name: str, candidate_name: str) -> bool:
-    return _normalize_item_name(candidate_name) in _requested_name_forms(item_name)
+    return bool(_candidate_name_forms(candidate_name) & _requested_name_forms(item_name))
+
+
+def _candidate_name_forms(candidate_name: str) -> set[str]:
+    normalized = _normalize_item_name(candidate_name)
+    if not normalized:
+        return set()
+    forms = {normalized}
+    for prefix in _COMMON_ITEM_PREFIX_MODIFIERS:
+        if normalized.startswith(prefix) and len(normalized) > len(prefix):
+            forms.add(normalized[len(prefix) :])
+    return forms
 
 
 def _requested_name_forms(item_name: str) -> set[str]:
