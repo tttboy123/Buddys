@@ -106,7 +106,7 @@ function setWorkspaceStatus(message) {
 
 function formatQuantity(quantity, unit) {
   if (quantity === null || quantity === undefined) {
-    return unit ? `amount unknown (${unit})` : "amount unknown";
+    return "数量未输入";
   }
   const normalized = Number.isInteger(quantity) ? String(quantity) : String(quantity);
   return `${normalized}${unit || ""}`;

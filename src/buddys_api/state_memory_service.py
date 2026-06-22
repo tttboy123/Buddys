@@ -73,7 +73,7 @@ _QUANTITY_NUMBER_PATTERN = r"(?:\d+(?:\.\d+)?|半|几|零|〇|一|二|两|俩|�
 _QUANTITY_UNIT_PATTERN = (
     r"(?:个|盒|瓶|包|袋|斤|公斤|千克|克|kg|g|升|l|ml|毫升|支|杯|罐|片|块|根|只|双|桶|听|张|盘|份|箱|颗|条|瓣|把)"
 )
-_ITEM_PREFIX_MODIFIER_PATTERN = r"(?:[一-龥]{0,4})?"
+_ITEM_PREFIX_MODIFIER_PATTERN = rf"(?:{'|'.join(sorted(_COMMON_ITEM_PREFIX_MODIFIERS, key=len, reverse=True))})?"
 
 
 class StateMemoryService:
@@ -867,14 +867,21 @@ def _content_supports_quantity(*, content: str, item_name: str) -> bool:
     normalized_item_name = _normalize_item_name(item_name)
     if not normalized_item_name:
         return False
-    quantity_pattern = rf"{_QUANTITY_NUMBER_PATTERN}\s*(?:{_QUANTITY_UNIT_PATTERN})?"
-    for candidate_name in sorted(_requested_name_forms(item_name), key=len, reverse=True):
+    quantity_with_unit_pattern = rf"{_QUANTITY_NUMBER_PATTERN}\s*{_QUANTITY_UNIT_PATTERN}"
+    quantity_without_unit_pattern = rf"{_QUANTITY_NUMBER_PATTERN}"
+    for candidate_name in sorted(_quantity_evidence_name_forms(item_name), key=len, reverse=True):
         item_pattern = re.escape(candidate_name)
-        before_item = rf"{quantity_pattern}\s*{_ITEM_PREFIX_MODIFIER_PATTERN}{item_pattern}"
-        after_item = rf"{item_pattern}\s*{quantity_pattern}"
-        if re.search(before_item, content, flags=re.IGNORECASE) is not None:
+        before_item_with_unit = rf"{quantity_with_unit_pattern}\s*{_ITEM_PREFIX_MODIFIER_PATTERN}{item_pattern}"
+        after_item_with_unit = rf"{item_pattern}\s*{quantity_with_unit_pattern}"
+        before_item_without_unit = rf"{quantity_without_unit_pattern}\s*{item_pattern}"
+        after_item_without_unit = rf"{item_pattern}\s*{quantity_without_unit_pattern}"
+        if re.search(before_item_with_unit, content, flags=re.IGNORECASE) is not None:
             return True
-        if re.search(after_item, content, flags=re.IGNORECASE) is not None:
+        if re.search(after_item_with_unit, content, flags=re.IGNORECASE) is not None:
+            return True
+        if re.search(before_item_without_unit, content, flags=re.IGNORECASE) is not None:
+            return True
+        if re.search(after_item_without_unit, content, flags=re.IGNORECASE) is not None:
             return True
     return False
 
@@ -895,6 +902,20 @@ def _candidate_name_forms(candidate_name: str) -> set[str]:
     for prefix in _COMMON_ITEM_PREFIX_MODIFIERS:
         if normalized.startswith(prefix) and len(normalized) > len(prefix):
             forms.add(normalized[len(prefix) :])
+    return forms
+
+
+def _quantity_evidence_name_forms(item_name: str) -> set[str]:
+    normalized = _normalize_item_name(item_name)
+    if not normalized:
+        return set()
+    forms = set()
+    forms.update(_candidate_name_forms(item_name))
+    forms.update(_requested_name_forms(item_name))
+    for generic_name, members in _GENERIC_ITEM_NAME_EXPANSIONS.items():
+        if normalized == generic_name or normalized in members:
+            forms.add(generic_name)
+            forms.update(members)
     return forms
 
 

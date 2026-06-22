@@ -264,8 +264,9 @@ def test_console_assets_render_unknown_quantity_copy_not_dash_placeholder() -> N
     format_quantity_body = extract_function_body(script, "formatQuantity")
     proposal_delta_copy_body = extract_function_body(script, "proposalDeltaCopy")
 
-    assert "amount unknown" in format_quantity_body
+    assert "数量未输入" in format_quantity_body
     assert "数量未输入" in proposal_delta_copy_body
+    assert "amount unknown" not in script
     assert 'return unit || "-"' not in format_quantity_body
     assert 'return "-"' not in format_quantity_body
 
