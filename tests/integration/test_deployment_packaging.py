@@ -1,5 +1,5 @@
 from pathlib import Path
-from stat import S_IXUSR
+import shutil
 import subprocess
 import sys
 
@@ -88,10 +88,35 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
 def test_tencent_service_execstart_does_not_depend_on_wrapper_exec_bit() -> None:
     deploy_root = REPO_ROOT / "deploy" / "tencent"
     service = (deploy_root / "buddys.service").read_text(encoding="utf-8")
-    wrapper_mode = (deploy_root / "run_with_env_compat.sh").stat().st_mode
 
     assert "ExecStart=/usr/bin/env bash /opt/buddys/deploy/tencent/run_with_env_compat.sh" in service
-    assert wrapper_mode & S_IXUSR
+
+
+def test_tencent_env_wrapper_runs_via_bash_even_without_exec_bit(tmp_path) -> None:
+    deploy_root = REPO_ROOT / "deploy" / "tencent"
+    wrapper_copy = tmp_path / "run_with_env_compat.sh"
+    shutil.copyfile(deploy_root / "run_with_env_compat.sh", wrapper_copy)
+    wrapper_copy.chmod(0o644)
+
+    env_file = tmp_path / "buddys.env"
+    env_file.write_text("BUDDYSDEFAULTMODEL=MiniMax-M3\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(wrapper_copy),
+            str(env_file),
+            sys.executable,
+            "-c",
+            "print('wrapper-ran')",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "wrapper-ran"
 
 
 def test_tencent_public_ip_helper_prefers_metadata_public_ipv4_over_private_hostname(tmp_path) -> None:
