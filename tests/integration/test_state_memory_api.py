@@ -559,6 +559,102 @@ def test_state_memory_capture_preserves_quantity_when_provider_uses_generic_syno
     assert delta["unit"] == "斤"
 
 
+def test_state_memory_capture_preserves_quantity_for_modified_item_phrase(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "capture-modified-item@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FakeProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="牛奶",
+                        operation="upsert",
+                        quantity=2,
+                        unit="盒",
+                        category="饮品",
+                        confidence=0.9,
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FakeProvider()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了两盒纯牛奶"},
+    )
+
+    assert response.status_code == 201
+    delta = response.json()["proposal"]["deltas"][0]
+    assert delta["quantity"] == 2
+    assert delta["unit"] == "盒"
+
+
+def test_state_memory_capture_preserves_quantity_for_spoken_quantity_word(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "capture-spoken-quantity@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    class FakeProvider:
+        provider = "system-minimax-default"
+        model = "MiniMax-M3"
+
+        def parse_state_memory_capture(self, *, source, content, image_base64=None, image_media_type=None):
+            return (
+                [
+                    StateMemoryDelta(
+                        item_name="鸡蛋",
+                        operation="upsert",
+                        quantity=2,
+                        unit="个",
+                        category="食材",
+                        confidence=0.9,
+                        source=source,
+                    )
+                ],
+                [],
+            )
+
+    app.state.state_memory_service.provider_factory = lambda config: FakeProvider()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了俩鸡蛋"},
+    )
+
+    assert response.status_code == 201
+    delta = response.json()["proposal"]["deltas"][0]
+    assert delta["quantity"] == 2
+    assert delta["unit"] == "个"
+
+
 def test_state_memory_proposal_lifecycle_writes_state_only_on_confirm_and_emits_sync_events(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     owner_token = register(client, "owner@example.com")

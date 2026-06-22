@@ -59,10 +59,11 @@ _GENERIC_ITEM_NAME_EXPANSIONS: dict[str, frozenset[str]] = {
     "猪肉": frozenset({"猪肉", "五花肉", "瘦肉", "里脊肉", "梅花肉"}),
 }
 
-_QUANTITY_NUMBER_PATTERN = r"(?:\d+(?:\.\d+)?|半|几|零|〇|一|二|两|三|四|五|六|七|八|九|十|百)"
+_QUANTITY_NUMBER_PATTERN = r"(?:\d+(?:\.\d+)?|半|几|零|〇|一|二|两|俩|仨|三|四|五|六|七|八|九|十|百)"
 _QUANTITY_UNIT_PATTERN = (
     r"(?:个|盒|瓶|包|袋|斤|公斤|千克|克|kg|g|升|l|ml|毫升|支|杯|罐|片|块|根|只|双|桶|听|张|盘|份|箱|颗|条|瓣|把)"
 )
+_ITEM_PREFIX_MODIFIER_PATTERN = r"(?:[一-龥]{0,4})?"
 
 
 class StateMemoryService:
@@ -859,7 +860,7 @@ def _content_supports_quantity(*, content: str, item_name: str) -> bool:
     quantity_pattern = rf"{_QUANTITY_NUMBER_PATTERN}\s*(?:{_QUANTITY_UNIT_PATTERN})?"
     for candidate_name in sorted(_requested_name_forms(item_name), key=len, reverse=True):
         item_pattern = re.escape(candidate_name)
-        before_item = rf"{quantity_pattern}\s*{item_pattern}"
+        before_item = rf"{quantity_pattern}\s*{_ITEM_PREFIX_MODIFIER_PATTERN}{item_pattern}"
         after_item = rf"{item_pattern}\s*{quantity_pattern}"
         if re.search(before_item, content, flags=re.IGNORECASE) is not None:
             return True
