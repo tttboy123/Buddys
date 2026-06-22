@@ -120,6 +120,45 @@ def test_sync_snapshot_projects_single_traceable_proactive_memory_hint(tmp_path)
     assert hint["kind"] == "consumption_inference"
 
 
+def test_sync_snapshot_projects_unknown_quantity_without_fake_placeholder(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "snapshot-unknown@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了牛奶"},
+    )
+    assert capture.status_code == 201
+
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有牛奶吗"},
+    )
+    assert query.status_code == 200
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    item = snapshot["state_memory"]["items_by_buddy"][buddy["buddy_id"]][0]
+    latest_query = snapshot["state_memory"]["latest_query_by_buddy"][buddy["buddy_id"]]
+
+    assert item["quantity"] is None
+    assert latest_query["summary"] == "还有牛奶，但数量不确定。"
+
+
 def test_sync_snapshot_projects_photo_evidence_details_for_auth_workspace(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("BUDDYS_DEFAULT_OPENAI_API_KEY", "sk-system-default")
     app = create_app(db_path=tmp_path / "buddys.sqlite3")

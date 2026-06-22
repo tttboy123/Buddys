@@ -758,10 +758,15 @@ def _build_have_item_answer(*, item_name: str, items: list[StateMemoryItem]) -> 
     matching_items = [item for item in items if _item_matches_requested_name(item_name=item_name, candidate_name=item.name)]
     evidence_source = [item for item in matching_items if _item_is_available(item)] or matching_items
     has_item = any(_item_is_available(item) for item in matching_items)
+    all_available_quantities_unknown = bool(evidence_source) and all(item.quantity is None for item in evidence_source)
     return StateMemoryQueryAnswer(
         answer_type="have_item",
         subject_name=item_name,
-        summary=f"还有{item_name}。" if has_item else f"现在没有{item_name}。",
+        summary=(
+            f"还有{item_name}，但数量不确定。"
+            if has_item and all_available_quantities_unknown
+            else (f"还有{item_name}。" if has_item else f"现在没有{item_name}。")
+        ),
         evidence_item_ids=[item.item_id for item in evidence_source],
         evidence_items=[_evidence_item(item) for item in evidence_source],
         missing_items=[] if has_item else [item_name],

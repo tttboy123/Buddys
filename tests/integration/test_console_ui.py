@@ -257,6 +257,17 @@ def test_console_assets_surface_unrecognized_and_traceable_proactive_copy() -> N
     assert "state.ui.dismissedHintKey = hint.hintKey;" in script
 
 
+def test_console_assets_render_unknown_quantity_copy_not_dash_placeholder() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    format_quantity_body = extract_function_body(script, "formatQuantity")
+
+    assert "amount unknown" in format_quantity_body
+    assert 'return unit || "-"' not in format_quantity_body
+    assert 'return "-"' not in format_quantity_body
+
+
 def test_console_uses_sync_snapshot_as_shared_state_source_without_inner_html_injection() -> None:
     client = make_client()
 

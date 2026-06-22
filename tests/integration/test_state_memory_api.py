@@ -905,6 +905,42 @@ def test_state_memory_query_returns_evidence_and_missing_items_for_inventory_and
     assert missing_for_recipe.json()["trace_id"].startswith("trace_")
 
 
+def test_state_memory_query_have_item_with_unknown_quantity_is_honest(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "unknown-quantity@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    capture = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/captures/conversation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"content": "我买了牛奶"},
+    )
+    assert capture.status_code == 201
+
+    proposal_id = capture.json()["proposal"]["proposal_id"]
+    confirm = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/proposals/{proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert confirm.status_code == 200
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有牛奶吗"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer_type"] == "have_item"
+    assert response.json()["summary"] == "还有牛奶，但数量不确定。"
+    assert response.json()["evidence_items"][0]["quantity"] is None
+
+
 def test_state_memory_query_trace_and_cost_artifacts_are_owner_scoped(tmp_path) -> None:
     app = create_app(db_path=tmp_path / "buddys.sqlite3")
     client = TestClient(app)
