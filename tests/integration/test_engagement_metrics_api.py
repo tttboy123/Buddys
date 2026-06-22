@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from buddys_api.main import create_app
+from buddys_api.state_memory_models import StateMemoryDelta
 
 
 def test_retention_summary_requires_founder_allowlist_email(tmp_path, monkeypatch) -> None:
@@ -166,6 +167,105 @@ def test_retention_summary_counts_review_only_return_visits_as_maintenance(
     assert body["activated_users"] == 2
 
 
+def test_retention_summary_counts_real_confirm_and_correct_review_emitters_as_maintenance(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BUDDYS_FOUNDER_METRICS_EMAIL_ALLOWLIST", "founder@example.com")
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    founder = _register(client, "founder@example.com")
+
+    confirm_user = _register(client, "confirm-maintenance@example.com")
+    confirm_buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {confirm_user['token']}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    _complete_state_memory_cycle(client, token=confirm_user["token"], buddy_id=confirm_buddy["buddy_id"])
+    _set_activation_cycle_time(
+        app,
+        user_id=confirm_user["user_id"],
+        buddy_id=confirm_buddy["buddy_id"],
+        base_time=datetime.now(timezone.utc) - timedelta(days=2),
+    )
+    confirm_proposal = app.state.state_memory_store.save_pending_proposal(
+        user_id=confirm_user["user_id"],
+        buddy_id=confirm_buddy["buddy_id"],
+        source="conversation",
+        content="补了牛奶",
+        deltas=[StateMemoryDelta(item_name="牛奶", operation="upsert", source="conversation")],
+    )
+    confirm_response = client.post(
+        f"/me/buddies/{confirm_buddy['buddy_id']}/state-memory/proposals/{confirm_proposal.proposal_id}/confirm",
+        headers={"Authorization": f"Bearer {confirm_user['token']}"},
+    )
+    assert confirm_response.status_code == 200
+    _set_latest_event_time(
+        app,
+        user_id=confirm_user["user_id"],
+        buddy_id=confirm_buddy["buddy_id"],
+        event_type="proposal_confirmed",
+        event_time=datetime.now(timezone.utc) - timedelta(hours=12),
+    )
+
+    correct_user = _register(client, "correct-maintenance@example.com")
+    correct_buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {correct_user['token']}"},
+        json={"name": "Pantry Buddy", "space_id": "pantry"},
+    ).json()
+    _complete_state_memory_cycle(client, token=correct_user["token"], buddy_id=correct_buddy["buddy_id"])
+    _set_activation_cycle_time(
+        app,
+        user_id=correct_user["user_id"],
+        buddy_id=correct_buddy["buddy_id"],
+        base_time=datetime.now(timezone.utc) - timedelta(days=4),
+    )
+    correct_proposal = app.state.state_memory_store.save_pending_proposal(
+        user_id=correct_user["user_id"],
+        buddy_id=correct_buddy["buddy_id"],
+        source="conversation",
+        content="鸡蛋是六个",
+        deltas=[StateMemoryDelta(item_name="鸡蛋", operation="upsert", source="conversation")],
+    )
+    correct_response = client.post(
+        f"/me/buddies/{correct_buddy['buddy_id']}/state-memory/proposals/{correct_proposal.proposal_id}/correct",
+        headers={"Authorization": f"Bearer {correct_user['token']}"},
+        json={
+            "deltas": [
+                {
+                    "item_name": "鸡蛋",
+                    "operation": "upsert",
+                    "quantity": 6,
+                    "unit": "个",
+                    "source": "manual",
+                }
+            ]
+        },
+    )
+    assert correct_response.status_code == 200
+    _set_latest_event_time(
+        app,
+        user_id=correct_user["user_id"],
+        buddy_id=correct_buddy["buddy_id"],
+        event_type="proposal_corrected",
+        event_time=datetime.now(timezone.utc) - timedelta(hours=12),
+    )
+
+    response = client.get(
+        "/metrics/retention-summary",
+        headers={"Authorization": f"Bearer {founder['token']}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["d1_active_users"] == 1
+    assert body["d3_active_users"] == 1
+    assert body["d7_active_users"] == 0
+    assert body["activated_users"] == 2
+
+
 def _register(client: TestClient, email: str) -> dict[str, str]:
     response = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
     assert response.status_code == 201
@@ -223,6 +323,22 @@ def _seed_activation_sequence(app, *, user_id: str, buddy_id: str, base_time: da
     _set_event_time(app, query.event_id, base_time + timedelta(minutes=2))
 
 
+def _set_activation_cycle_time(app, *, user_id: str, buddy_id: str, base_time: datetime) -> None:
+    rows = app.state.db.execute(
+        """
+        SELECT event_id, event_type
+        FROM engagement_events
+        WHERE user_id = ? AND buddy_id = ?
+        ORDER BY created_at, event_id
+        """,
+        (user_id, buddy_id),
+    ).fetchall()
+    cycle_events = [row for row in rows if row["event_type"] in {"capture_submitted", "proposal_confirmed", "query_answered"}][:3]
+    assert [row["event_type"] for row in cycle_events] == ["capture_submitted", "proposal_confirmed", "query_answered"]
+    for offset, row in enumerate(cycle_events):
+        _set_event_time(app, row["event_id"], base_time + timedelta(minutes=offset))
+
+
 def _seed_maintenance_event(
     app,
     *,
@@ -262,6 +378,21 @@ def _seed_unordered_events(app, *, user_id: str, buddy_id: str, base_time: datet
     _set_event_time(app, query.event_id, base_time)
     _set_event_time(app, capture.event_id, base_time + timedelta(minutes=1))
     _set_event_time(app, confirm.event_id, base_time + timedelta(minutes=2))
+
+
+def _set_latest_event_time(app, *, user_id: str, buddy_id: str, event_type: str, event_time: datetime) -> None:
+    row = app.state.db.execute(
+        """
+        SELECT event_id
+        FROM engagement_events
+        WHERE user_id = ? AND buddy_id = ? AND event_type = ?
+        ORDER BY created_at DESC, event_id DESC
+        LIMIT 1
+        """,
+        (user_id, buddy_id, event_type),
+    ).fetchone()
+    assert row is not None
+    _set_event_time(app, row["event_id"], event_time)
 
 
 def _set_event_time(app, event_id: str, event_time: datetime) -> None:
