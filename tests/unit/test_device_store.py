@@ -1,3 +1,5 @@
+import json
+
 from buddys_api.device_models import (
     AgentMachine,
     BuddyRuntimeBinding,
@@ -357,7 +359,7 @@ def test_sqlite_backed_device_registry_persists_pair_auth_across_reinstantiation
     reopened = DeviceRegistry(connect_db(db_path))
 
     pairing = reopened.require_device_pairing_token("device_body_001", "pair-token-001")
-    assert pairing.pairing_token == "pair-token-001"
+    assert pairing.device.device_id == "device_body_001"
     assert reopened.get_device("device_body_001").firmware_version == "0.1.0"
     assert reopened.get_agent_machine("agent_machine_home_mac").owner_user_id == "user_demo"
     assert reopened.get_binding("buddy_home_001").agent_machine_id == "agent_machine_home_mac"
@@ -422,7 +424,7 @@ def test_sqlite_backed_device_registry_persists_repair_tombstones_across_reinsta
         pass
     else:
         raise AssertionError("expected old pairing token to stay invalid after restart")
-    assert reopened.require_device_pairing_token("device_body_001", "pair-token-new").pairing_token == "pair-token-new"
+    assert reopened.require_device_pairing_token("device_body_001", "pair-token-new").device.device_id == "device_body_001"
 
     try:
         reopened.pair_device(
@@ -443,3 +445,220 @@ def test_sqlite_backed_device_registry_persists_repair_tombstones_across_reinsta
         pass
     else:
         raise AssertionError("expected revoked pairing token to remain unusable after restart")
+
+
+def test_sqlite_backed_device_registry_does_not_persist_plaintext_pairing_tokens(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    connection = connect_db(db_path)
+    initialize_database(connection)
+    store = DeviceRegistry(connection)
+    machine = AgentMachine(
+        agent_machine_id="agent_machine_home_mac",
+        owner_user_id="user_demo",
+        machine_type="local_mac",
+        endpoint="https://agent-machine.example.test",
+        public_key="agent-machine-public-key",
+        runtime_version="0.1.0",
+        status="online",
+    )
+    binding = BuddyRuntimeBinding(
+        buddy_id="buddy_home_001",
+        agent_machine_id="agent_machine_home_mac",
+        role="primary",
+        authority_epoch=1,
+        state_revision=0,
+    )
+    store.pair_device(
+        device=Device(
+            device_id="device_body_001",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.1.0",
+        ),
+        agent_machine=machine,
+        binding=binding,
+        pairing_token="pair-token-old",
+        idempotency_key="pair-001",
+    )
+    store.pair_device(
+        device=Device(
+            device_id="device_body_001",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0",
+        ),
+        agent_machine=machine.model_copy(update={"runtime_version": "0.2.0"}),
+        binding=binding,
+        pairing_token="pair-token-new",
+        idempotency_key="pair-002",
+    )
+
+    serialized_pairings = str(
+        connection.execute("SELECT * FROM device_pairings_runtime ORDER BY device_id, idempotency_key").fetchall()
+    )
+    serialized_revoked = str(
+        connection.execute("SELECT * FROM device_revoked_pairing_tokens_runtime ORDER BY pairing_token").fetchall()
+    )
+    assert "pair-token-old" not in serialized_pairings
+    assert "pair-token-new" not in serialized_pairings
+    assert "pair-token-old" not in serialized_revoked
+    assert "pair-token-new" not in serialized_revoked
+
+
+def test_sqlite_backed_device_registry_repair_write_failure_preserves_old_auth_and_restart_state(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    connection = connect_db(db_path)
+    initialize_database(connection)
+    store = DeviceRegistry(connection)
+    machine = AgentMachine(
+        agent_machine_id="agent_machine_home_mac",
+        owner_user_id="user_demo",
+        machine_type="local_mac",
+        endpoint="https://agent-machine.example.test",
+        public_key="agent-machine-public-key",
+        runtime_version="0.1.0",
+        status="online",
+    )
+    binding = BuddyRuntimeBinding(
+        buddy_id="buddy_home_001",
+        agent_machine_id="agent_machine_home_mac",
+        role="primary",
+        authority_epoch=1,
+        state_revision=0,
+    )
+    store.pair_device(
+        device=Device(
+            device_id="device_body_001",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.1.0",
+        ),
+        agent_machine=machine,
+        binding=binding,
+        pairing_token="pair-token-old",
+        idempotency_key="pair-001",
+    )
+
+    original_persist_pairing = store._persist_pairing
+
+    def failing_persist_pairing(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise RuntimeError("boom")
+
+    store._persist_pairing = failing_persist_pairing
+    try:
+        try:
+            store.pair_device(
+                device=Device(
+                    device_id="device_body_001",
+                    buddy_id="buddy_home_001",
+                    space_id="space_home",
+                    public_key="device-public-key",
+                    pairing_state="paired",
+                    firmware_version="0.2.0",
+                ),
+                agent_machine=machine.model_copy(update={"runtime_version": "0.2.0"}),
+                binding=binding,
+                pairing_token="pair-token-new",
+                idempotency_key="pair-002",
+            )
+        except RuntimeError as exc:
+            assert str(exc) == "boom"
+        else:
+            raise AssertionError("expected persist failure to abort repair")
+    finally:
+        store._persist_pairing = original_persist_pairing
+
+    assert store.require_device_pairing_token("device_body_001", "pair-token-old").device.device_id == "device_body_001"
+    connection.close()
+
+    reopened = DeviceRegistry(connect_db(db_path))
+    assert reopened.require_device_pairing_token("device_body_001", "pair-token-old").device.device_id == "device_body_001"
+    try:
+        reopened.require_device_pairing_token("device_body_001", "pair-token-new")
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("expected failed repair token to be absent after restart")
+
+
+def test_sqlite_backed_device_registry_migrates_legacy_plaintext_pairing_storage(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    connection = connect_db(db_path)
+    initialize_database(connection)
+    legacy_payload = json.dumps(
+        {
+            "agent_machine": {
+                "agent_machine_id": "agent_machine_home_mac",
+                "endpoint": "https://agent-machine.example.test",
+                "machine_type": "local_mac",
+                "owner_user_id": "user_demo",
+                "public_key": "agent-machine-public-key",
+                "runtime_version": "0.1.0",
+                "status": "online",
+            },
+            "binding": {
+                "agent_machine_id": "agent_machine_home_mac",
+                "authority_epoch": 1,
+                "buddy_id": "buddy_home_001",
+                "role": "primary",
+                "state_revision": 0,
+            },
+            "device": {
+                "buddy_id": "buddy_home_001",
+                "device_id": "device_body_001",
+                "firmware_version": "0.1.0",
+                "pairing_state": "paired",
+                "public_key": "device-public-key",
+                "space_id": "space_home",
+            },
+            "idempotency_key": "pair-001",
+            "pairing_token": "legacy-plaintext-token",
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO device_pairings_runtime (
+                device_id, idempotency_key, pairing_token, buddy_id, agent_machine_id, created_at, payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "device_body_001",
+                "pair-001",
+                "legacy-plaintext-token",
+                "buddy_home_001",
+                "agent_machine_home_mac",
+                "2026-06-22T00:00:00+00:00",
+                legacy_payload,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO device_revoked_pairing_tokens_runtime (pairing_token, device_id, revoked_at)
+            VALUES (?, ?, ?)
+            """,
+            ("legacy-revoked-token", "device_body_002", "2026-06-22T00:00:00+00:00"),
+        )
+    connection.close()
+
+    reopened_connection = connect_db(db_path)
+    reopened = DeviceRegistry(reopened_connection)
+
+    assert reopened.require_device_pairing_token("device_body_001", "legacy-plaintext-token").device.device_id == "device_body_001"
+    serialized_pairings = str(
+        reopened_connection.execute("SELECT * FROM device_pairings_runtime").fetchall()
+    )
+    serialized_revoked = str(
+        reopened_connection.execute("SELECT * FROM device_revoked_pairing_tokens_runtime").fetchall()
+    )
+    assert "legacy-plaintext-token" not in serialized_pairings
+    assert "legacy-revoked-token" not in serialized_revoked
