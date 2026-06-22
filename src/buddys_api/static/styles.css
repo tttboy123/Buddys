@@ -109,6 +109,15 @@ li {
   gap: 14px;
 }
 
+#buddyTransparencyPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.transparency-heading {
+  margin-bottom: 0;
+}
+
 .experience-panel {
   border: 1px solid var(--border);
   border-radius: 8px;

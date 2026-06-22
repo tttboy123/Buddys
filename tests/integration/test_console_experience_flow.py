@@ -143,6 +143,7 @@ def test_console_experience_flow_supports_login_photo_capture_and_traceable_hint
     assert hint["basis"]["item_names"] == ["牛奶"]
     assert recent_activity
     assert recent_activity[-1]["kind"] == "query_answered"
+    assert recent_activity[-1]["summary"] == "Buddy answered whether 牛奶 is still at home."
     assert recent_activity[-1]["basis"]["item_names"] == ["牛奶"]
     assert "api_key" not in str(recent_activity).lower()
     assert "capabilities" not in str(recent_activity).lower()

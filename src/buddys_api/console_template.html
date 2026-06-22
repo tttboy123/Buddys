@@ -213,63 +213,73 @@
         </div>
       </section>
 
-      <section id="latestAnswerPanel" class="experience-panel" aria-labelledby="latestAnswerTitle">
-        <div class="section-heading">
+      <section id="buddyTransparencyPanel" aria-labelledby="buddyTransparencyTitle">
+        <div class="section-heading transparency-heading">
           <div>
-            <p class="eyebrow">Latest answer</p>
-            <h2 id="latestAnswerTitle">Answer and evidence</h2>
+            <p class="eyebrow">Transparency</p>
+            <h2 id="buddyTransparencyTitle">See what Buddy remembers and why</h2>
           </div>
+          <p class="support-copy">See what Buddy remembers, what it just did, and why it answered that way.</p>
         </div>
-        <p id="stateMemoryQuerySummary">No state-memory query yet.</p>
-        <p id="stateMemoryQueryMeta" class="support-copy">Evidence will appear here once a state-memory query has been asked.</p>
-        <ul id="stateMemoryEvidenceList" class="state-list">
-          <li>No evidence items captured.</li>
-        </ul>
-      </section>
 
-      <section id="buddyActivityPanel" class="experience-panel" aria-labelledby="buddyActivityTitle">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">What Buddy just did</p>
-            <h2 id="buddyActivityTitle">Recent activity</h2>
+        <section id="latestAnswerPanel" class="experience-panel" aria-labelledby="latestAnswerTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Latest answer</p>
+              <h2 id="latestAnswerTitle">Answer and evidence</h2>
+            </div>
           </div>
-        </div>
-        <p id="buddyActivityStatus" class="support-copy">Buddy will list the latest saved updates and answers here.</p>
-        <ul id="buddyActivityList" class="state-list">
-          <li>No recent Buddy activity yet.</li>
-        </ul>
-      </section>
+          <p id="stateMemoryQuerySummary">No state-memory query yet.</p>
+          <p id="stateMemoryQueryMeta" class="support-copy">Evidence will appear here once a state-memory query has been asked.</p>
+          <ul id="stateMemoryEvidenceList" class="state-list">
+            <li>No evidence items captured.</li>
+          </ul>
+        </section>
 
-      <section id="proactiveMemoryCard" class="experience-panel" aria-labelledby="proactiveTitle" hidden>
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Buddy noticed</p>
-            <h2 id="proactiveTitle">Buddy noticed</h2>
+        <section id="buddyActivityPanel" class="experience-panel" aria-labelledby="buddyActivityTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">What Buddy just did</p>
+              <h2 id="buddyActivityTitle">Recent activity</h2>
+            </div>
           </div>
-          <button id="dismissProactiveHintButton" class="ghost-button hint-dismiss" type="button">Ignore</button>
-        </div>
-        <p id="proactiveMessage"></p>
-        <p id="proactiveBasis" class="support-copy"></p>
-      </section>
+          <p id="buddyActivityStatus" class="support-copy">Buddy will list the latest saved updates and answers here.</p>
+          <ul id="buddyActivityList" class="state-list">
+            <li>No recent Buddy activity yet.</li>
+          </ul>
+        </section>
 
-      <details id="detailsDrawer" class="details-drawer">
-        <summary>Why this answer / details</summary>
-        <div class="details-stack">
-          <section id="buddyThinkingPanel" class="experience-panel detail-panel" aria-labelledby="buddyThinkingTitle">
-            <p class="eyebrow">Why Buddy thinks that</p>
-            <h2 id="buddyThinkingTitle">Why Buddy thinks that</h2>
-            <section id="answerBasisPanel" aria-labelledby="answerBasisTitle">
-              <p class="eyebrow">Answer basis</p>
-              <h3 id="answerBasisTitle">Why Buddy answered this</h3>
-              <p id="answerBasisQuestion" class="support-copy">No current answer basis.</p>
-              <p id="answerBasisSummary" class="support-copy">Ask Buddy something to inspect evidence details.</p>
-              <ul id="answerBasisEvidenceList" class="state-list">
-                <li>No answer evidence yet.</li>
-              </ul>
+        <section id="proactiveMemoryCard" class="experience-panel" aria-labelledby="proactiveTitle" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Buddy noticed</p>
+              <h2 id="proactiveTitle">Buddy noticed</h2>
+            </div>
+            <button id="dismissProactiveHintButton" class="ghost-button hint-dismiss" type="button">Ignore</button>
+          </div>
+          <p id="proactiveMessage"></p>
+          <p id="proactiveBasis" class="support-copy"></p>
+        </section>
+
+        <details id="detailsDrawer" class="details-drawer">
+          <summary>Why this answer / details</summary>
+          <div class="details-stack">
+            <section id="buddyThinkingPanel" class="experience-panel detail-panel" aria-labelledby="buddyThinkingTitle">
+              <p class="eyebrow">Why Buddy thinks that</p>
+              <h2 id="buddyThinkingTitle">Why Buddy thinks that</h2>
+              <section id="answerBasisPanel" aria-labelledby="answerBasisTitle">
+                <p class="eyebrow">Answer basis</p>
+                <h3 id="answerBasisTitle">Why Buddy answered this</h3>
+                <p id="answerBasisQuestion" class="support-copy">No current answer basis.</p>
+                <p id="answerBasisSummary" class="support-copy">Ask Buddy something to inspect evidence details.</p>
+                <ul id="answerBasisEvidenceList" class="state-list">
+                  <li>No answer evidence yet.</li>
+                </ul>
+              </section>
             </section>
-          </section>
-        </div>
-      </details>
+          </div>
+        </details>
+      </section>
     </main>
     <script>
       window.BUDDYS_BOOTSTRAP = __BUDDYS_BOOTSTRAP__;

@@ -118,12 +118,15 @@ def test_console_html_exposes_user_transparency_surfaces_without_operator_panels
 
     html = client.get("/console").text
 
+    assert 'id="buddyTransparencyPanel"' in html
+    assert 'id="buddyTransparencyTitle"' in html
     assert 'id="buddyActivityPanel"' in html
     assert 'id="buddyActivityTitle"' in html
     assert 'id="buddyActivityList"' in html
     assert 'id="buddyThinkingPanel"' in html
     assert 'id="buddyThinkingTitle"' in html
     assert 'id="answerBasisPanel"' in html
+    assert "See what Buddy remembers, what it just did, and why it answered that way." in html
     assert "What Buddy just did" in html
     assert "Why Buddy thinks that" in html
     assert "Agent management" not in html
@@ -159,16 +162,31 @@ def test_console_assets_project_safe_recent_activity_for_transparency_view() -> 
     project_workspace_body = extract_function_body(script, "projectWorkspace")
     clear_session_body = extract_function_body(script, "clearSession")
     render_recent_activity_body = extract_function_body(script, "renderRecentActivity")
+    format_recent_activity_body = extract_function_body(script, "formatRecentActivity")
 
     assert "renderRecentActivity" in script
     assert "recent_activity_by_buddy" in project_workspace_body
     assert 'state.workspace.recentActivity = buddyId ? stateMemory.recent_activity_by_buddy?.[buddyId] || [] : [];' in project_workspace_body
     assert 'state.workspace.recentActivity = [];' in clear_session_body
     assert ".slice().reverse()" in render_recent_activity_body
+    assert "activity.summary" in format_recent_activity_body
+    assert "Saved " not in format_recent_activity_body
+    assert "Waiting for review:" not in format_recent_activity_body
+    assert "Answered:" not in format_recent_activity_body
     assert "api_key" not in script
     assert "agentManagementPanel" not in script
     assert "providerSettingsPanel" not in script
     assert "costGovernancePanel" not in script
+
+
+def test_console_assets_render_latest_answer_as_user_altitude_transparency_copy() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    render_latest_answer_body = extract_function_body(script, "renderLatestAnswer")
+
+    assert "Buddy answered using saved evidence." in render_latest_answer_body
+    assert "evidence ready" not in render_latest_answer_body
 
 
 def test_console_assets_support_session_aware_auth_and_state_memory_client_flow() -> None:

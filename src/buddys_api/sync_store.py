@@ -515,7 +515,7 @@ def _recent_state_memory_activity_by_buddy(
             activity.append(
                 {
                     "kind": "query_answered",
-                    "summary": latest_query.get("summary"),
+                    "summary": _query_activity_summary(latest_query),
                     "created_at": latest_query.get("created_at"),
                     "basis": {
                         "item_names": [name for name in basis_item_names if name],
@@ -587,6 +587,19 @@ def _proposal_activity_summary(proposal: Any, item_names: list[str]) -> str:
     if item_names:
         return f"Buddy is waiting for review on {' / '.join(item_names)}."
     return f"Buddy is waiting for review on a {proposal.source} update."
+
+
+def _query_activity_summary(latest_query: dict[str, Any]) -> str:
+    answer_type = latest_query.get("answer_type")
+    subject_name = latest_query.get("subject_name")
+    if answer_type == "have_item" and subject_name:
+        return f"Buddy answered whether {subject_name} is still at home."
+    if answer_type == "missing_for_recipe" and subject_name:
+        return f"Buddy answered what is still missing for {subject_name}."
+    question = latest_query.get("question")
+    if question:
+        return f"Buddy answered your question about {question}."
+    return "Buddy answered your latest question."
 
 
 def _format_state_memory_quantity(quantity: Any, unit: Any) -> str:

@@ -531,8 +531,8 @@ function renderLatestAnswer() {
   }
   $("stateMemoryQuerySummary").textContent = latestQuery.summary;
   $("stateMemoryQueryMeta").textContent = latestQuery.missing_items?.length
-    ? `${latestQuery.question} · missing ${latestQuery.missing_items.join(" / ")}`
-    : `${latestQuery.question} · evidence ready`;
+    ? `Buddy answered using saved evidence and still needs ${latestQuery.missing_items.join(" / ")}.`
+    : "Buddy answered using saved evidence.";
   renderTextList(
     "stateMemoryEvidenceList",
     latestQuery.evidence_items || [],
@@ -543,21 +543,6 @@ function renderLatestAnswer() {
 }
 
 function formatRecentActivity(activity) {
-  const itemNames = activity.basis?.item_names?.join(" / ");
-  if (activity.kind === "capture_confirmed") {
-    const changeType = activity.basis?.change_type || "saved";
-    return itemNames ? `Saved ${changeType}: ${itemNames}` : `Saved ${changeType}.`;
-  }
-  if (activity.kind === "proposal_waiting") {
-    const unrecognizedCount = activity.basis?.unrecognized?.length || 0;
-    if (itemNames && unrecognizedCount) {
-      return `Waiting for review: ${itemNames} (${unrecognizedCount} unrecognized part${unrecognizedCount === 1 ? "" : "s"})`;
-    }
-    return itemNames ? `Waiting for review: ${itemNames}` : "Waiting for review.";
-  }
-  if (activity.kind === "query_answered") {
-    return activity.basis?.question ? `Answered: ${activity.basis.question}` : "Answered your latest question.";
-  }
   return activity.summary || "Buddy recorded a recent action.";
 }
 
@@ -577,8 +562,8 @@ function renderRecentActivity() {
   }
 
   status.textContent = activities.length
-    ? "Buddy shows the latest saved updates, pending reviews, and answers here."
-    : "Buddy will list the latest saved updates and answers here.";
+    ? "Buddy keeps the latest saved updates, reviews, and answers here."
+    : "Buddy will keep the latest saved updates and answers here.";
 
   renderTextList("buddyActivityList", activities, "No recent Buddy activity yet.", (activity) => {
     return formatRecentActivity(activity);
