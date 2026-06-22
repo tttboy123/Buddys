@@ -221,21 +221,30 @@ class DeviceRegistry:
             FROM device_revoked_pairing_tokens_runtime
             """
         ).fetchall()
-        if not any(
-            (not _looks_like_token_verifier(row["pairing_token"]) or "\"pairing_token\"" in row["payload_json"])
-            for row in legacy_pairings
-        ) and not any(not _looks_like_token_verifier(row["pairing_token"]) for row in legacy_revoked):
+        legacy_plaintext_pairing_tokens: set[str] = set()
+        for row in legacy_pairings:
+            payload = json.loads(row["payload_json"])
+            payload_pairing_token = payload.get("pairing_token")
+            if isinstance(payload_pairing_token, str):
+                legacy_plaintext_pairing_tokens.add(payload_pairing_token)
+            elif not _looks_like_token_verifier(row["pairing_token"]):
+                legacy_plaintext_pairing_tokens.add(row["pairing_token"])
+
+        if not legacy_plaintext_pairing_tokens and not any(
+            not _looks_like_token_verifier(row["pairing_token"]) for row in legacy_revoked
+        ):
             return
 
         with self._connection:
             for row in legacy_pairings:
-                pairing_token_verifier = (
-                    row["pairing_token"]
-                    if _looks_like_token_verifier(row["pairing_token"])
-                    else _pairing_token_verifier(row["pairing_token"])
-                )
                 payload = json.loads(row["payload_json"])
-                payload.pop("pairing_token", None)
+                legacy_pairing_token = payload.pop("pairing_token", None)
+                if isinstance(legacy_pairing_token, str):
+                    pairing_token_verifier = _pairing_token_verifier(legacy_pairing_token)
+                elif row["pairing_token"] in legacy_plaintext_pairing_tokens:
+                    pairing_token_verifier = _pairing_token_verifier(row["pairing_token"])
+                else:
+                    pairing_token_verifier = row["pairing_token"]
                 self._connection.execute(
                     """
                     UPDATE device_pairings_runtime
@@ -250,7 +259,11 @@ class DeviceRegistry:
                     ),
                 )
             for row in legacy_revoked:
-                if _looks_like_token_verifier(row["pairing_token"]):
+                if row["pairing_token"] in legacy_plaintext_pairing_tokens:
+                    pairing_token_verifier = _pairing_token_verifier(row["pairing_token"])
+                elif not _looks_like_token_verifier(row["pairing_token"]):
+                    pairing_token_verifier = _pairing_token_verifier(row["pairing_token"])
+                else:
                     continue
                 self._connection.execute(
                     """
@@ -259,7 +272,7 @@ class DeviceRegistry:
                     WHERE pairing_token = ? AND device_id = ? AND revoked_at = ?
                     """,
                     (
-                        _pairing_token_verifier(row["pairing_token"]),
+                        pairing_token_verifier,
                         row["pairing_token"],
                         row["device_id"],
                         row["revoked_at"],

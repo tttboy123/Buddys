@@ -591,6 +591,8 @@ def test_sqlite_backed_device_registry_migrates_legacy_plaintext_pairing_storage
     db_path = tmp_path / "buddys.sqlite3"
     connection = connect_db(db_path)
     initialize_database(connection)
+    legacy_hex_token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    legacy_revoked_hex_token = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
     legacy_payload = json.dumps(
         {
             "agent_machine": {
@@ -618,7 +620,7 @@ def test_sqlite_backed_device_registry_migrates_legacy_plaintext_pairing_storage
                 "space_id": "space_home",
             },
             "idempotency_key": "pair-001",
-            "pairing_token": "legacy-plaintext-token",
+            "pairing_token": legacy_hex_token,
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -634,7 +636,7 @@ def test_sqlite_backed_device_registry_migrates_legacy_plaintext_pairing_storage
             (
                 "device_body_001",
                 "pair-001",
-                "legacy-plaintext-token",
+                legacy_hex_token,
                 "buddy_home_001",
                 "agent_machine_home_mac",
                 "2026-06-22T00:00:00+00:00",
@@ -646,19 +648,19 @@ def test_sqlite_backed_device_registry_migrates_legacy_plaintext_pairing_storage
             INSERT INTO device_revoked_pairing_tokens_runtime (pairing_token, device_id, revoked_at)
             VALUES (?, ?, ?)
             """,
-            ("legacy-revoked-token", "device_body_002", "2026-06-22T00:00:00+00:00"),
+            (legacy_revoked_hex_token, "device_body_002", "2026-06-22T00:00:00+00:00"),
         )
     connection.close()
 
     reopened_connection = connect_db(db_path)
     reopened = DeviceRegistry(reopened_connection)
 
-    assert reopened.require_device_pairing_token("device_body_001", "legacy-plaintext-token").device.device_id == "device_body_001"
+    assert reopened.require_device_pairing_token("device_body_001", legacy_hex_token).device.device_id == "device_body_001"
     serialized_pairings = str(
         reopened_connection.execute("SELECT * FROM device_pairings_runtime").fetchall()
     )
     serialized_revoked = str(
         reopened_connection.execute("SELECT * FROM device_revoked_pairing_tokens_runtime").fetchall()
     )
-    assert "legacy-plaintext-token" not in serialized_pairings
-    assert "legacy-revoked-token" not in serialized_revoked
+    assert legacy_hex_token not in serialized_pairings
+    assert legacy_revoked_hex_token not in serialized_revoked
