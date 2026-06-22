@@ -1,4 +1,6 @@
+import json
 import re
+import subprocess
 
 from fastapi.testclient import TestClient
 
@@ -13,6 +15,11 @@ def extract_function_body(script: str, function_name: str) -> str:
     match = re.search(rf"function {function_name}\([^)]*\) \{{(?P<body>.*?)\n\}}", script, re.S)
     assert match is not None
     return match.group("body")
+
+
+def run_node(script: str) -> str:
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    return result.stdout.strip()
 
 
 def test_console_route_serves_html() -> None:
@@ -134,6 +141,32 @@ def test_console_html_exposes_user_transparency_surfaces_without_operator_panels
     assert "Cost governance" not in html
 
 
+def test_console_html_exposes_founder_metrics_containers() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+
+    assert 'id="founderMetricsPanel"' in html
+    assert 'id="founderActivationPanel"' in html
+    assert 'id="founderRetentionPanel"' in html
+    assert 'id="founderCaptureMixPanel"' in html
+
+
+def test_console_html_exposes_device_workspace_and_owner_action_controls() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+
+    assert 'id="deviceWorkspacePanel"' in html
+    assert 'id="deviceIdentityPanel"' in html
+    assert 'id="deviceHealthPanel"' in html
+    assert 'id="deviceDesiredStatePanel"' in html
+    assert 'id="deviceEventPanel"' in html
+    assert 'id="deviceBindingPanel"' in html
+    assert 'id="deviceOwnerInstructionInput"' in html
+    assert 'id="publishDeviceDesiredStateButton"' in html
+
+
 def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> None:
     client = make_client()
 
@@ -206,6 +239,8 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "/auth/me" in script
     assert "/auth/logout" in script
     assert "/me/buddies" in script
+    assert "/metrics/engagement" in script
+    assert "/metrics/retention-summary" in script
     assert "/sync/snapshot" in script
     assert "/state-memory/captures/conversation" in script
     assert "/state-memory/query" in script
@@ -216,6 +251,170 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert 'saveSession(result.access_token, result.user);' in register_auth_body
     assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in register_auth_body
     assert "Registered ${result.user.email}" not in register_auth_body
+
+
+def test_console_assets_manage_founder_metrics_state_and_hide_panel_for_non_founders() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    clear_session_body = extract_function_body(script, "clearSession")
+    load_founder_metrics_body = extract_function_body(script, "loadFounderMetrics")
+    render_founder_metrics_body = extract_function_body(script, "renderFounderMetrics")
+
+    assert "engagementMetrics:" in script
+    assert "retentionSummary:" in script
+    assert "founderMetricsVisible:" in script
+    assert "founderMetricsUnavailableReason:" in script
+    assert "state.workspace.engagementMetrics = null;" in clear_session_body
+    assert "state.workspace.retentionSummary = null;" in clear_session_body
+    assert "state.workspace.founderMetricsVisible = false;" in clear_session_body
+    assert "state.workspace.founderMetricsUnavailableReason = null;" in clear_session_body
+    assert 'detailCode === "founder_metrics_forbidden"' in load_founder_metrics_body
+    assert "state.workspace.founderMetricsVisible = false;" in load_founder_metrics_body
+    assert "state.workspace.founderMetricsUnavailableReason" in load_founder_metrics_body
+    assert "const requestGeneration = ++state.ui.founderMetricsRequestGeneration;" in load_founder_metrics_body
+    assert "const requestSessionToken = state.auth.accessToken;" in load_founder_metrics_body
+    assert "requestGeneration !== state.ui.founderMetricsRequestGeneration" in load_founder_metrics_body
+    assert "requestSessionToken !== state.auth.accessToken" in load_founder_metrics_body
+    assert "$(\"founderMetricsPanel\").hidden" in render_founder_metrics_body
+
+
+def test_console_assets_project_and_publish_device_workspace_from_auth_snapshot() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+    render_device_workspace_body = extract_function_body(script, "renderDeviceWorkspace")
+    publish_device_desired_state_body = extract_function_body(script, "publishDeviceDesiredState")
+
+    assert "deviceReminderDraftsByBuddy" in script
+    assert "device:" in script
+    assert "agentMachine:" in script
+    assert "binding:" in script
+    assert "latestHeartbeat:" in script
+    assert "desiredState:" in script
+    assert "deviceEvents:" in script
+    assert "snapshot.devices" in project_workspace_body
+    assert "snapshot.agent_machines" in project_workspace_body
+    assert "snapshot.bindings" in project_workspace_body
+    assert "snapshot.latest_heartbeats" in project_workspace_body
+    assert "snapshot.desired_states" in project_workspace_body
+    assert "snapshot.device_events" in project_workspace_body
+    assert "No paired device yet." in render_device_workspace_body
+    assert "deviceReminderDraftsByBuddy[state.workspace.buddyId]" in render_device_workspace_body
+    assert "publishDeviceDesiredState" in script
+    assert "/me/buddies/" in publish_device_desired_state_body
+    assert "/desired-state" in publish_device_desired_state_body
+    assert "deviceOwnerInstructionInput" in publish_device_desired_state_body
+    assert "reminder_text" in publish_device_desired_state_body
+    assert "state_memory" not in publish_device_desired_state_body
+    assert "proactive_hint" not in publish_device_desired_state_body
+    assert "recent_activity" not in publish_device_desired_state_body
+    assert "source_trace_id" not in publish_device_desired_state_body
+    assert '"state"' not in publish_device_desired_state_body
+    assert '"manual_required"' not in publish_device_desired_state_body
+
+
+def test_console_assets_refresh_workspace_without_waiting_for_founder_metrics() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    refresh_workspace_body = extract_function_body(script, "refreshWorkspace")
+
+    assert "await loadSyncSnapshot();" in refresh_workspace_body
+    assert "loadFounderMetrics().catch(() => {});" in refresh_workspace_body
+    assert "await loadFounderMetrics();" not in refresh_workspace_body
+
+
+def test_console_assets_clear_session_invalidates_inflight_founder_metrics_refresh() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    clear_session_body = extract_function_body(script, "clearSession")
+
+    assert "founderMetricsRequestGeneration:" in script
+    assert "state.ui.founderMetricsRequestGeneration += 1;" in clear_session_body
+
+
+def test_console_assets_render_founder_metric_card_preserves_heading_ids_after_runtime_render() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    render_founder_metric_card_body = extract_function_body(script, "renderFounderMetricCard")
+    node_output = run_node(
+        f"""
+        class Element {{
+          constructor(tagName, id = "", className = "") {{
+            this.tagName = tagName.toLowerCase();
+            this.id = id;
+            this.className = className;
+            this.children = [];
+            this.parentNode = null;
+            this.textContent = "";
+          }}
+          appendChild(child) {{
+            child.parentNode = this;
+            this.children.push(child);
+            return child;
+          }}
+          removeChild(child) {{
+            this.children = this.children.filter((entry) => entry !== child);
+            child.parentNode = null;
+          }}
+          querySelector(selector) {{
+            if (selector === "h3") {{
+              return this.children.find((child) => child.tagName === "h3") || null;
+            }}
+            if (selector === ".eyebrow") {{
+              return this.children.find((child) => child.className === "eyebrow") || null;
+            }}
+            return null;
+          }}
+        }}
+        const card = new Element("section", "founderActivationPanel");
+        const eyebrow = card.appendChild(new Element("p", "", "eyebrow"));
+        eyebrow.textContent = "Activation";
+        const heading = card.appendChild(new Element("h3", "founderActivationTitle"));
+        heading.textContent = "My activation";
+        const stale = card.appendChild(new Element("p", "", "support-copy"));
+        stale.textContent = "stale";
+        const document = {{
+          getElementById(id) {{
+            return id === "founderActivationPanel" ? card : null;
+          }},
+          createElement(tagName) {{
+            return new Element(tagName);
+          }},
+        }};
+        const $ = (id) => document.getElementById(id);
+        function renderFounderMetricCard(targetId, title, rows) {{{render_founder_metric_card_body}}}
+        renderFounderMetricCard("founderActivationPanel", "My activation", ["Tracked events: 3"]);
+        console.log(JSON.stringify({{
+          headingId: card.children[1].id,
+          headingText: card.children[1].textContent,
+          childTags: card.children.map((child) => child.tagName),
+          lastText: card.children[2].textContent,
+        }}));
+        """
+    )
+
+    rendered = json.loads(node_output)
+    assert rendered["headingId"] == "founderActivationTitle"
+    assert rendered["headingText"] == "My activation"
+    assert rendered["childTags"] == ["p", "h3", "p"]
+    assert rendered["lastText"] == "Tracked events: 3"
+
+
+def test_console_assets_show_unavailable_state_for_founder_metrics_failures_without_breaking_workspace() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    load_founder_metrics_body = extract_function_body(script, "loadFounderMetrics")
+    render_founder_metrics_body = extract_function_body(script, "renderFounderMetrics")
+
+    assert "Founder metrics unavailable" in render_founder_metrics_body
+    assert "setWorkspaceStatus" not in load_founder_metrics_body
+    assert "await loadSyncSnapshot();" not in load_founder_metrics_body
 
 
 def test_console_assets_clear_stale_session_when_protected_api_returns_invalid_or_expired_token() -> None:
@@ -255,6 +454,7 @@ def test_console_assets_reset_auth_and_workspace_copy_honestly() -> None:
     assert "No confirmed state yet." in script
     assert "No state-memory query yet." in script
     assert "proactiveHint: null" in script
+    assert "founderMetricsVisible: false" in script
     assert "state.workspace.confirmedItems = [];" in clear_session_body
     assert "state.workspace.pendingProposals = [];" in clear_session_body
     assert "state.workspace.latestQuery = null;" in clear_session_body

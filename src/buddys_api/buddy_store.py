@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Literal
 
+from buddys_api.db import connection_lock
 from buddys_api.schemas import Buddy, new_id
 
 
@@ -12,6 +13,7 @@ BuddyOrigin = Literal["auth", "legacy"]
 class BuddyStore:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
+        self._connection_lock = connection_lock(connection)
 
     def create_buddy(
         self,
@@ -32,26 +34,27 @@ class BuddyStore:
         return self.save(buddy, created_via=created_via)
 
     def save(self, buddy: Buddy, created_via: BuddyOrigin = "auth") -> Buddy:
-        with self.connection:
-            self.connection.execute(
-                """
-                INSERT OR REPLACE INTO buddies (
-                    buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at, created_via
+        with self._connection_lock:
+            with self.connection:
+                self.connection.execute(
+                    """
+                    INSERT OR REPLACE INTO buddies (
+                        buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at, created_via
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        buddy.buddy_id,
+                        buddy.user_id,
+                        buddy.name,
+                        buddy.space_id,
+                        buddy.device_id,
+                        buddy.autonomy_level,
+                        buddy.status,
+                        buddy.created_at,
+                        created_via,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    buddy.buddy_id,
-                    buddy.user_id,
-                    buddy.name,
-                    buddy.space_id,
-                    buddy.device_id,
-                    buddy.autonomy_level,
-                    buddy.status,
-                    buddy.created_at,
-                    created_via,
-                ),
-            )
         return buddy
 
     def get(self, buddy_id: str) -> Buddy:
@@ -73,10 +76,11 @@ class BuddyStore:
         return buddy
 
     def origin_for_buddy(self, buddy_id: str) -> BuddyOrigin:
-        row = self.connection.execute(
-            "SELECT created_via FROM buddies WHERE buddy_id = ?",
-            (buddy_id,),
-        ).fetchone()
+        with self._connection_lock:
+            row = self.connection.execute(
+                "SELECT created_via FROM buddies WHERE buddy_id = ?",
+                (buddy_id,),
+            ).fetchone()
         if row is None:
             raise KeyError(f"buddy not found: {buddy_id}")
         return row["created_via"]
@@ -87,26 +91,28 @@ class BuddyStore:
         if created_via is not None:
             where += " AND created_via = ?"
             params = (user_id, created_via)
-        rows = self.connection.execute(
-            """
-            SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
-            FROM buddies
-            {where}
-            ORDER BY created_at, buddy_id
-            """.format(where=where),
-            params,
-        ).fetchall()
+        with self._connection_lock:
+            rows = self.connection.execute(
+                """
+                SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
+                FROM buddies
+                {where}
+                ORDER BY created_at, buddy_id
+                """.format(where=where),
+                params,
+            ).fetchall()
         return [_buddy_from_row(row) for row in rows]
 
     def list_legacy(self) -> list[Buddy]:
-        rows = self.connection.execute(
-            """
-            SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
-            FROM buddies
-            WHERE created_via = 'legacy'
-            ORDER BY created_at, buddy_id
-            """
-        ).fetchall()
+        with self._connection_lock:
+            rows = self.connection.execute(
+                """
+                SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
+                FROM buddies
+                WHERE created_via = 'legacy'
+                ORDER BY created_at, buddy_id
+                """
+            ).fetchall()
         return [_buddy_from_row(row) for row in rows]
 
     def _get_for_user(
@@ -120,14 +126,15 @@ class BuddyStore:
         if created_via is not None:
             where += " AND created_via = ?"
             params = (buddy_id, user_id, created_via)
-        row = self.connection.execute(
-            """
-            SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
-            FROM buddies
-            {where}
-            """.format(where=where),
-            params,
-        ).fetchone()
+        with self._connection_lock:
+            row = self.connection.execute(
+                """
+                SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
+                FROM buddies
+                {where}
+                """.format(where=where),
+                params,
+            ).fetchone()
         if row is None:
             return None
         return _buddy_from_row(row)
@@ -138,14 +145,15 @@ class BuddyStore:
         if created_via is not None:
             where += " AND created_via = ?"
             params = (buddy_id, created_via)
-        return self.connection.execute(
-            """
-            SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
-            FROM buddies
-            {where}
-            """.format(where=where),
-            params,
-        ).fetchone()
+        with self._connection_lock:
+            return self.connection.execute(
+                """
+                SELECT buddy_id, user_id, name, space_id, device_id, autonomy_level, status, created_at
+                FROM buddies
+                {where}
+                """.format(where=where),
+                params,
+            ).fetchone()
 
 
 def _buddy_from_row(row: sqlite3.Row) -> Buddy:

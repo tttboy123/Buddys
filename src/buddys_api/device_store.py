@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +44,7 @@ class DeviceRegistry:
         self._pairings_by_idempotency: dict[tuple[str, str], DevicePairing] = {}
         self._pairing_token_index: dict[str, tuple[str, str]] = {}
         self._revoked_pairing_tokens: set[str] = set()
+        self._desired_state_lock = threading.Lock()
         if self._connection is not None:
             self._migrate_legacy_pairing_token_storage()
             self._load_from_connection()
@@ -121,6 +123,27 @@ class DeviceRegistry:
                 self._persist_desired_state(desired_state)
         self._desired_state_by_device[desired_state.device_id] = desired_state
         return desired_state
+
+    def publish_owner_manual_reminder(self, *, device_id: str, reminder_text: str) -> DeviceDesiredState:
+        with self._desired_state_lock:
+            current_desired_state = self._desired_state_by_device.get(
+                device_id,
+                DeviceDesiredState(device_id=device_id, state="idle", revision=0),
+            )
+            desired_state = DeviceDesiredState(
+                device_id=device_id,
+                state="manual_required",
+                revision=current_desired_state.revision + 1,
+                display_text=reminder_text,
+                manual_required=True,
+                user_instruction=reminder_text,
+                recent_activity=[],
+            )
+            if self._connection is not None:
+                with self._connection:
+                    self._persist_desired_state(desired_state)
+            self._desired_state_by_device[device_id] = desired_state
+            return desired_state
 
     def get_desired_state(self, device_id: str) -> DeviceDesiredState:
         return self._desired_state_by_device.get(

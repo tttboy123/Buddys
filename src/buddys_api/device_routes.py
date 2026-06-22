@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Header, Path, Request
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Header, Path, Request
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from buddys_api.auth_models import UserPublic
+from buddys_api.auth_routes import require_current_user
+from buddys_api.buddy_store import BuddyStore
 from buddys_api.device_models import (
     AgentMachine,
     BuddyRuntimeBinding,
@@ -23,7 +26,7 @@ from buddys_api.runtime import BuddysRuntime
 from buddys_api.schemas import Buddy
 
 
-router = APIRouter(prefix="/devices", tags=["devices"])
+router = APIRouter(tags=["devices"])
 
 
 class PairAgentMachineRequest(BaseModel):
@@ -64,10 +67,16 @@ class DeviceEventRequest(BaseModel):
         return validate_device_event_payload(payload)
 
 
+class OwnerDesiredStateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reminder_text: NonEmptyStr
+
+
 DeviceIdPath = Annotated[str, Path(min_length=1)]
 
 
-@router.post("/{device_id}/pair", status_code=201)
+@router.post("/devices/{device_id}/pair", status_code=201)
 def pair_device(device_id: DeviceIdPath, request: PairDeviceRequest, fastapi_request: Request) -> dict[str, object]:
     device_id = _validate_path_id(device_id, "device_id")
     runtime = _runtime(fastapi_request)
@@ -128,7 +137,7 @@ def pair_device(device_id: DeviceIdPath, request: PairDeviceRequest, fastapi_req
     return {"device": pairing.device, "agent_machine": pairing.agent_machine, "binding": pairing.binding}
 
 
-@router.post("/{device_id}/heartbeat")
+@router.post("/devices/{device_id}/heartbeat")
 def device_heartbeat(
     device_id: DeviceIdPath,
     request: DeviceHeartbeatRequest,
@@ -159,7 +168,7 @@ def device_heartbeat(
     return saved
 
 
-@router.get("/{device_id}/desired-state")
+@router.get("/devices/{device_id}/desired-state")
 def get_device_desired_state(
     device_id: DeviceIdPath,
     fastapi_request: Request,
@@ -171,7 +180,46 @@ def get_device_desired_state(
     return device_store.get_desired_state(device_id)
 
 
-@router.post("/{device_id}/events", status_code=201)
+@router.post("/me/buddies/{buddy_id}/devices/{device_id}/desired-state")
+def set_owner_desired_state(
+    buddy_id: str,
+    device_id: DeviceIdPath,
+    request: OwnerDesiredStateRequest,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    buddy = _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    device_store = _device_store(fastapi_request)
+    device = _require_device(device_store, device_id)
+    if device.buddy_id != buddy.buddy_id:
+        raise HTTPException(status_code=404, detail={"code": "device_not_found"})
+    if device.pairing_state != "paired":
+        raise HTTPException(status_code=409, detail={"code": "device_not_paired", "pairing_state": device.pairing_state})
+
+    saved = device_store.publish_owner_manual_reminder(
+        device_id=device_id,
+        reminder_text=request.reminder_text,
+    )
+    sync_event = fastapi_request.app.state.sync_store.append_event(
+        event_type="device.desired_state_updated",
+        entity_type="device",
+        entity_id=device_id,
+        actor_user_id=current_user.user_id,
+        visibility="auth",
+        payload_summary={
+            "buddy_id": buddy.buddy_id,
+            "device_id": device_id,
+            "state": saved.state,
+            "manual_required": saved.manual_required,
+            "revision": saved.revision,
+            "has_display_text": bool(saved.display_text),
+            "has_user_instruction": bool(saved.user_instruction),
+        },
+    )
+    return {"desired_state": saved, "state_revision": sync_event.revision}
+
+
+@router.post("/devices/{device_id}/events", status_code=201)
 def submit_device_event(
     device_id: DeviceIdPath,
     request: DeviceEventRequest,
@@ -200,7 +248,7 @@ def submit_device_event(
     return saved
 
 
-@router.get("/{device_id}/ota/check")
+@router.get("/devices/{device_id}/ota/check")
 def check_device_ota(
     device_id: DeviceIdPath,
     fastapi_request: Request,
@@ -225,6 +273,10 @@ def _device_store(request: Request) -> DeviceRegistry:
     return request.app.state.device_store
 
 
+def _buddy_store(request: Request) -> BuddyStore:
+    return request.app.state.buddy_store
+
+
 def _require_legacy_buddy(runtime: BuddysRuntime, buddy_id: str) -> Buddy:
     try:
         return runtime._get_legacy_buddy(buddy_id)
@@ -237,6 +289,13 @@ def _require_device(device_store: DeviceRegistry, device_id: str) -> Device:
         return device_store.get_device(device_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "device_not_found"}) from exc
+
+
+def _require_auth_buddy(request: Request, *, buddy_id: str, user_id: str) -> Buddy:
+    try:
+        return _buddy_store(request).get_for_user(buddy_id=buddy_id, user_id=user_id, created_via="auth")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "buddy_not_found"}) from exc
 
 
 def _require_device_auth(device_store: DeviceRegistry, device_id: str, pairing_token: str | None) -> DevicePairing:

@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from buddys_api.buddy_store import BuddyStore
+from buddys_api.db import connection_lock
 from buddys_api.device_store import DeviceRegistry
 from buddys_api.schemas import CostEvent, new_id, now_iso
 from buddys_api.state_memory_store import is_recent_consumption_timestamp
@@ -46,6 +47,7 @@ _REDACTED = object()
 class SyncStore:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
+        self._connection_lock = connection_lock(connection)
 
     def append_event(
         self,
@@ -59,26 +61,27 @@ class SyncStore:
         summary = _sanitize_summary(payload_summary or {})
         event_id = new_id("sync")
         created_at = now_iso()
-        with self.connection:
-            cursor = self.connection.execute(
-                """
-                INSERT INTO sync_events (
-                    event_id, event_type, entity_type, entity_id, actor_user_id, visibility, payload_summary, created_at
+        with self._connection_lock:
+            with self.connection:
+                cursor = self.connection.execute(
+                    """
+                    INSERT INTO sync_events (
+                        event_id, event_type, entity_type, entity_id, actor_user_id, visibility, payload_summary, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_id,
+                        event_type,
+                        entity_type,
+                        entity_id,
+                        actor_user_id,
+                        visibility,
+                        json.dumps(summary, ensure_ascii=False, sort_keys=True),
+                        created_at,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event_id,
-                    event_type,
-                    entity_type,
-                    entity_id,
-                    actor_user_id,
-                    visibility,
-                    json.dumps(summary, ensure_ascii=False, sort_keys=True),
-                    created_at,
-                ),
-            )
-            revision = int(cursor.lastrowid)
+                revision = int(cursor.lastrowid)
         return SyncEvent(
             revision=revision,
             event_id=event_id,
@@ -93,24 +96,26 @@ class SyncStore:
 
     def list_events(self, since_revision: int, user_id: str | None) -> list[SyncEvent]:
         visibility_clause, params = _visibility_clause(user_id)
-        rows = self.connection.execute(
-            f"""
-            SELECT revision, event_id, event_type, entity_type, entity_id, actor_user_id,
-                   visibility, payload_summary, created_at
-            FROM sync_events
-            WHERE revision > ? AND {visibility_clause}
-            ORDER BY revision
-            """,
-            (since_revision, *params),
-        ).fetchall()
+        with self._connection_lock:
+            rows = self.connection.execute(
+                f"""
+                SELECT revision, event_id, event_type, entity_type, entity_id, actor_user_id,
+                       visibility, payload_summary, created_at
+                FROM sync_events
+                WHERE revision > ? AND {visibility_clause}
+                ORDER BY revision
+                """,
+                (since_revision, *params),
+            ).fetchall()
         return [_event_from_row(row) for row in rows]
 
     def visible_state_revision(self, user_id: str | None) -> int:
         visibility_clause, params = _visibility_clause(user_id)
-        row = self.connection.execute(
-            f"SELECT COALESCE(MAX(revision), 0) AS state_revision FROM sync_events WHERE {visibility_clause}",
-            params,
-        ).fetchone()
+        with self._connection_lock:
+            row = self.connection.execute(
+                f"SELECT COALESCE(MAX(revision), 0) AS state_revision FROM sync_events WHERE {visibility_clause}",
+                params,
+            ).fetchone()
         return int(row["state_revision"])
 
 

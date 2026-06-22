@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
 
-from buddys_api.device_models import DeviceDesiredState
+from buddys_api.device_models import AgentMachine, BuddyRuntimeBinding, Device, DeviceDesiredState
 from buddys_api.main import create_app
 
 
@@ -289,6 +289,80 @@ def test_sync_snapshot_with_null_session_token_hash_degrades_to_401_not_500(tmp_
 
     assert response.status_code == 401
     assert response.json() == {"detail": {"code": "invalid_or_expired_token"}}
+
+
+def test_auth_desired_state_write_advances_sync_revision_and_keeps_event_summary_structural_only(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "owner-device-sync@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    app.state.device_store.pair_device(
+        device=Device(
+            device_id="device_body_auth_sync_001",
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0-sim",
+        ),
+        agent_machine=AgentMachine(
+            agent_machine_id="agent_machine_auth_sync_001",
+            owner_user_id=buddy["user_id"],
+            machine_type="local_mac",
+            endpoint="https://agent-machine.example.test",
+            public_key="agent-machine-public-key",
+            runtime_version="0.2.0-sim",
+            status="online",
+        ),
+        binding=BuddyRuntimeBinding(
+            buddy_id=buddy["buddy_id"],
+            agent_machine_id="agent_machine_auth_sync_001",
+            role="primary",
+        ),
+        pairing_token="pair-auth-sync-001",
+        idempotency_key="pair-auth-sync-001",
+    )
+
+    before_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/devices/device_body_auth_sync_001/desired-state",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"reminder_text": "Please close the freezer door."},
+    )
+    assert response.status_code == 200
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    event_feed = client.get(
+        "/sync/events",
+        params={"since_revision": before_snapshot["state_revision"]},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    ).json()
+
+    assert snapshot["state_revision"] > before_snapshot["state_revision"]
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["state"] == "manual_required"
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["revision"] == 1
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["display_text"] == "Please close the freezer door."
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["source_trace_id"] is None
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["state_memory"] is None
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["proactive_hint"] is None
+    assert snapshot["desired_states"]["device_body_auth_sync_001"]["recent_activity"] == []
+    assert event_feed["events"][-1]["event_type"] == "device.desired_state_updated"
+    assert event_feed["events"][-1]["entity_id"] == "device_body_auth_sync_001"
+    assert event_feed["events"][-1]["payload_summary"] == {
+        "buddy_id": buddy["buddy_id"],
+        "device_id": "device_body_auth_sync_001",
+        "has_display_text": True,
+        "has_user_instruction": True,
+        "manual_required": True,
+        "revision": 1,
+        "state": "manual_required",
+    }
+    assert "Please close the freezer door." not in str(event_feed)
 
 
 def test_sync_snapshot_rehydrates_legacy_runtime_trace_and_cost_after_restart(tmp_path) -> None:

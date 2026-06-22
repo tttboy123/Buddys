@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 import pytest
+from threading import Barrier, Thread
+from time import sleep
 
 from buddys_api.device_models import AgentMachine, BuddyRuntimeBinding, Device, DeviceDesiredState
 from buddys_api.device_store import DeviceRegistry
@@ -455,6 +457,327 @@ def test_desired_state_endpoint_returns_only_explicitly_stored_projection_withou
     ]
 
 
+def test_owner_auth_desired_state_route_writes_explicit_projection_for_paired_device(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-route@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    pair_auth_device(
+        store,
+        buddy=buddy,
+        device_id="device_body_owner_route_001",
+        agent_machine_id="agent_machine_owner_route_001",
+        pairing_token="pair-owner-route-001",
+        idempotency_key="pair-owner-route-001",
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/devices/device_body_owner_route_001/desired-state",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"reminder_text": "Please check the pantry door."},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state_revision"] >= 2
+    assert body["desired_state"]["device_id"] == "device_body_owner_route_001"
+    assert body["desired_state"]["state"] == "manual_required"
+    assert body["desired_state"]["revision"] == 1
+    assert body["desired_state"]["display_text"] == "Please check the pantry door."
+    assert body["desired_state"]["manual_required"] is True
+    assert body["desired_state"]["user_instruction"] == "Please check the pantry door."
+    assert body["desired_state"]["source_trace_id"] is None
+    assert body["desired_state"]["idempotency_key"] is None
+    assert body["desired_state"]["state_memory"] is None
+    assert body["desired_state"]["proactive_hint"] is None
+    assert body["desired_state"]["recent_activity"] == []
+    stored = store.get_desired_state("device_body_owner_route_001")
+    assert stored.revision == 1
+    assert stored.display_text == "Please check the pantry door."
+
+
+def test_owner_auth_desired_state_route_rejects_missing_auth_wrong_user_and_wrong_buddy(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-guard@example.com")
+    other_token = register(client, "device-other-guard@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    other_buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Pantry Buddy", "space_id": "pantry"},
+    ).json()
+    pair_auth_device(
+        store,
+        buddy=buddy,
+        device_id="device_body_owner_guard_001",
+        agent_machine_id="agent_machine_owner_guard_001",
+        pairing_token="pair-owner-guard-001",
+        idempotency_key="pair-owner-guard-001",
+    )
+
+    missing_auth = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/devices/device_body_owner_guard_001/desired-state",
+        json={"reminder_text": "Check pantry"},
+    )
+    wrong_user = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/devices/device_body_owner_guard_001/desired-state",
+        headers={"Authorization": f"Bearer {other_token}"},
+        json={"reminder_text": "Check pantry"},
+    )
+    wrong_buddy = client.post(
+        f"/me/buddies/{other_buddy['buddy_id']}/devices/device_body_owner_guard_001/desired-state",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"reminder_text": "Check pantry"},
+    )
+
+    assert missing_auth.status_code == 401
+    assert missing_auth.json() == {"detail": {"code": "missing_bearer_token"}}
+    assert wrong_user.status_code == 404
+    assert wrong_user.json() == {"detail": {"code": "buddy_not_found"}}
+    assert wrong_buddy.status_code == 404
+    assert wrong_buddy.json() == {"detail": {"code": "device_not_found"}}
+    assert store.get_desired_state("device_body_owner_guard_001").revision == 0
+
+
+def test_owner_auth_desired_state_route_rejects_browser_injected_device_read_payload_fields(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-payload@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    pair_auth_device(
+        store,
+        buddy=buddy,
+        device_id="device_body_owner_payload_001",
+        agent_machine_id="agent_machine_owner_payload_001",
+        pairing_token="pair-owner-payload-001",
+        idempotency_key="pair-owner-payload-001",
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/devices/device_body_owner_payload_001/desired-state",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "reminder_text": "Please check the pantry door.",
+            "state_memory": {"confirmed_items": [{"name": "鸡蛋"}], "pending_proposal_count": 1},
+        },
+    )
+
+    assert response.status_code == 422
+    assert store.get_desired_state("device_body_owner_payload_001").revision == 0
+
+
+def test_owner_auth_desired_state_route_rejects_devices_not_in_paired_state(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-state@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    for index, pairing_state in enumerate(["pairing", "unpaired", "revoked"], start=1):
+        device_id = f"device_body_owner_state_{index:03d}"
+        store.save_device(
+            Device(
+                device_id=device_id,
+                buddy_id=buddy["buddy_id"],
+                space_id=buddy["space_id"],
+                public_key="device-public-key",
+                pairing_state=pairing_state,
+                firmware_version="0.2.0-sim",
+            )
+        )
+
+        response = client.post(
+            f"/me/buddies/{buddy['buddy_id']}/devices/{device_id}/desired-state",
+            headers={"Authorization": f"Bearer {owner_token}"},
+            json={"reminder_text": "Please check the pantry door."},
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": {"code": "device_not_paired", "pairing_state": pairing_state}}
+        assert store.get_desired_state(device_id).revision == 0
+
+
+def test_owner_auth_desired_state_route_rejects_state_spoofing_fields_for_manual_reminder_only(tmp_path) -> None:
+    store = DeviceRegistry()
+    app = create_app(device_store=store, db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-manual-only@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    pair_auth_device(
+        store,
+        buddy=buddy,
+        device_id="device_body_owner_manual_only_001",
+        agent_machine_id="agent_machine_owner_manual_only_001",
+        pairing_token="pair-owner-manual-only-001",
+        idempotency_key="pair-owner-manual-only-001",
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/devices/device_body_owner_manual_only_001/desired-state",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"reminder_text": "Please check the pantry door.", "state": "success"},
+    )
+
+    assert response.status_code == 422
+    assert store.get_desired_state("device_body_owner_manual_only_001").revision == 0
+
+
+def test_owner_auth_desired_state_route_assigns_monotonic_revisions_for_concurrent_manual_reminders(tmp_path) -> None:
+    device_id = "device_body_owner_race_001"
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    store = app.state.device_store
+    client = TestClient(app)
+    owner_token = register(client, "device-owner-race@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    pair_auth_device(
+        store,
+        buddy=buddy,
+        device_id=device_id,
+        agent_machine_id="agent_machine_owner_race_001",
+        pairing_token="pair-owner-race-001",
+        idempotency_key="pair-owner-race-001",
+    )
+
+    auth_barrier = Barrier(2)
+    original_authenticate_token = app.state.auth_store.authenticate_token
+
+    def racing_authenticate_token(access_token: str):
+        auth_barrier.wait(timeout=5)
+        sleep(0.01)
+        return original_authenticate_token(access_token)
+
+    app.state.auth_store.authenticate_token = racing_authenticate_token  # type: ignore[method-assign]
+
+    buddy_barrier = Barrier(2)
+    original_get_for_user = app.state.buddy_store.get_for_user
+
+    def racing_get_for_user(buddy_id: str, user_id: str, created_via=None):
+        buddy_barrier.wait(timeout=5)
+        sleep(0.01)
+        return original_get_for_user(buddy_id=buddy_id, user_id=user_id, created_via=created_via)
+
+    app.state.buddy_store.get_for_user = racing_get_for_user  # type: ignore[method-assign]
+
+    publish_barrier = Barrier(2)
+    original_publish_owner_manual_reminder = store.publish_owner_manual_reminder
+
+    def racing_publish_owner_manual_reminder(*, device_id: str, reminder_text: str) -> DeviceDesiredState:
+        if device_id == "device_body_owner_race_001":
+            publish_barrier.wait(timeout=5)
+        return original_publish_owner_manual_reminder(device_id=device_id, reminder_text=reminder_text)
+
+    store.publish_owner_manual_reminder = racing_publish_owner_manual_reminder  # type: ignore[method-assign]
+
+    sync_barrier = Barrier(2)
+    original_append_event = app.state.sync_store.append_event
+
+    def racing_append_event(
+        *,
+        event_type: str,
+        entity_type: str,
+        entity_id: str,
+        payload_summary: dict[str, object] | None = None,
+        actor_user_id: str | None = None,
+        visibility: str = "legacy",
+    ):
+        if event_type == "device.desired_state_updated" and entity_id == device_id:
+            sync_barrier.wait(timeout=5)
+        return original_append_event(
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            payload_summary=payload_summary,
+            actor_user_id=actor_user_id,
+            visibility=visibility,
+        )
+
+    app.state.sync_store.append_event = racing_append_event  # type: ignore[method-assign]
+
+    baseline_sync_revision = app.state.sync_store.visible_state_revision(buddy["user_id"])
+    response_bodies: list[tuple[str, dict[str, object]]] = []
+    thread_errors: list[BaseException] = []
+    concurrent_rounds = 4
+
+    def publish(reminder_text: str) -> None:
+        try:
+            response = client.post(
+                f"/me/buddies/{buddy['buddy_id']}/devices/{device_id}/desired-state",
+                headers={"Authorization": f"Bearer {owner_token}"},
+                json={"reminder_text": reminder_text},
+            )
+            assert response.status_code == 200
+            response_bodies.append((reminder_text, response.json()))
+        except BaseException as exc:  # pragma: no cover - exercised only on concurrent failure paths
+            thread_errors.append(exc)
+
+    for round_index in range(concurrent_rounds):
+        first = Thread(target=publish, args=(f"Check pantry door {round_index}.",))
+        second = Thread(target=publish, args=(f"Check fridge door {round_index}.",))
+        first.start()
+        second.start()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+    assert not thread_errors, repr(thread_errors[0]) if thread_errors else ""
+    desired_state_revisions = sorted(
+        int(body["desired_state"]["revision"]) for _, body in response_bodies  # type: ignore[index]
+    )
+    sync_revisions = sorted(int(body["state_revision"]) for _, body in response_bodies)
+    expected_revisions = list(range(1, concurrent_rounds * 2 + 1))
+    assert desired_state_revisions == expected_revisions
+    assert len(set(sync_revisions)) == concurrent_rounds * 2
+    assert app.state.sync_store.visible_state_revision(buddy["user_id"]) == baseline_sync_revision + concurrent_rounds * 2
+    new_sync_events = [
+        event
+        for event in app.state.sync_store.list_events(baseline_sync_revision, buddy["user_id"])
+        if event.event_type == "device.desired_state_updated" and event.entity_id == device_id
+    ]
+    assert [event.revision for event in new_sync_events] == sync_revisions
+    assert sorted(int(event.payload_summary["revision"]) for event in new_sync_events) == expected_revisions
+    event_by_revision = {event.revision: event for event in new_sync_events}
+    for reminder_text, body in response_bodies:
+        desired_state = body["desired_state"]  # type: ignore[index]
+        sync_revision = int(body["state_revision"])
+        desired_revision = int(desired_state["revision"])
+        sync_event = event_by_revision[sync_revision]
+        assert desired_state["display_text"] == reminder_text, reminder_text
+        assert desired_state["user_instruction"] == reminder_text, reminder_text
+        assert sync_event.entity_id == device_id, reminder_text
+        assert sync_event.payload_summary["device_id"] == device_id, reminder_text
+        assert int(sync_event.payload_summary["revision"]) == desired_revision, reminder_text
+        assert bool(sync_event.payload_summary["has_display_text"]) is True, reminder_text
+        assert bool(sync_event.payload_summary["has_user_instruction"]) is True, reminder_text
+    assert DeviceRegistry.get_desired_state(store, device_id).revision == concurrent_rounds * 2
+
+
 def test_device_auth_and_runtime_state_persist_across_create_app_restart(tmp_path) -> None:
     db_path = tmp_path / "buddys.sqlite3"
     app = create_app(db_path=db_path)
@@ -771,3 +1094,40 @@ def pair_payload(
 
 def pairing_headers(pairing_token: str = "pair-token-001") -> dict[str, str]:
     return {"X-Buddys-Pairing-Token": pairing_token}
+
+
+def pair_auth_device(
+    store: DeviceRegistry,
+    *,
+    buddy: dict[str, object],
+    device_id: str,
+    agent_machine_id: str,
+    pairing_token: str,
+    idempotency_key: str,
+) -> None:
+    store.pair_device(
+        device=Device(
+            device_id=device_id,
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0-sim",
+        ),
+        agent_machine=AgentMachine(
+            agent_machine_id=agent_machine_id,
+            owner_user_id=buddy["user_id"],
+            machine_type="local_mac",
+            endpoint="https://agent-machine.example.test",
+            public_key="agent-machine-public-key",
+            runtime_version="0.2.0-sim",
+            status="online",
+        ),
+        binding=BuddyRuntimeBinding(
+            buddy_id=buddy["buddy_id"],
+            agent_machine_id=agent_machine_id,
+            role="primary",
+        ),
+        pairing_token=pairing_token,
+        idempotency_key=idempotency_key,
+    )

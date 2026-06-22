@@ -280,6 +280,76 @@
           </div>
         </details>
       </section>
+
+      <section id="founderMetricsPanel" class="experience-panel founder-panel" aria-labelledby="founderMetricsTitle" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Founder metrics</p>
+            <h2 id="founderMetricsTitle">Activation and retention</h2>
+          </div>
+          <p id="founderMetricsStatus" class="support-copy">Founder metrics are hidden.</p>
+        </div>
+        <div class="founder-metrics-grid">
+          <section id="founderActivationPanel" class="founder-metric-card" aria-labelledby="founderActivationTitle">
+            <p class="eyebrow">Activation</p>
+            <h3 id="founderActivationTitle">My activation</h3>
+          </section>
+          <section id="founderRetentionPanel" class="founder-metric-card" aria-labelledby="founderRetentionTitle">
+            <p class="eyebrow">Retention</p>
+            <h3 id="founderRetentionTitle">Activated retention</h3>
+          </section>
+          <section id="founderCaptureMixPanel" class="founder-metric-card" aria-labelledby="founderCaptureMixTitle">
+            <p class="eyebrow">Capture mix</p>
+            <h3 id="founderCaptureMixTitle">Capture sources</h3>
+          </section>
+        </div>
+      </section>
+
+      <section id="deviceWorkspacePanel" class="experience-panel founder-panel" aria-labelledby="deviceWorkspaceTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Device workspace</p>
+            <h2 id="deviceWorkspaceTitle">Paired device</h2>
+          </div>
+          <p id="deviceWorkspaceStatus" class="support-copy">Login to inspect the paired device for this Buddy.</p>
+        </div>
+        <div class="founder-metrics-grid">
+          <section id="deviceIdentityPanel" class="founder-metric-card" aria-labelledby="deviceIdentityTitle">
+            <p class="eyebrow">Identity</p>
+            <h3 id="deviceIdentityTitle">Device identity</h3>
+          </section>
+          <section id="deviceHealthPanel" class="founder-metric-card" aria-labelledby="deviceHealthTitle">
+            <p class="eyebrow">Health</p>
+            <h3 id="deviceHealthTitle">Heartbeat and state</h3>
+          </section>
+          <section id="deviceDesiredStatePanel" class="founder-metric-card" aria-labelledby="deviceDesiredStateTitle">
+            <p class="eyebrow">Desired state</p>
+            <h3 id="deviceDesiredStateTitle">Desired state and revision</h3>
+          </section>
+          <section id="deviceEventPanel" class="founder-metric-card" aria-labelledby="deviceEventTitle">
+            <p class="eyebrow">Events</p>
+            <h3 id="deviceEventTitle">Recent device events</h3>
+          </section>
+          <section id="deviceBindingPanel" class="founder-metric-card" aria-labelledby="deviceBindingTitle">
+            <p class="eyebrow">Binding</p>
+            <h3 id="deviceBindingTitle">Binding and agent machine</h3>
+          </section>
+        </div>
+        <label class="field">
+          <span>Manual reminder</span>
+          <textarea
+            id="deviceOwnerInstructionInput"
+            rows="3"
+            placeholder="例如：请确认厨房门已经关好"
+            disabled
+          ></textarea>
+        </label>
+        <div class="button-row">
+          <button id="publishDeviceDesiredStateButton" class="secondary-button" type="button" disabled>
+            Publish device reminder
+          </button>
+        </div>
+      </section>
     </main>
     <script>
       window.BUDDYS_BOOTSTRAP = __BUDDYS_BOOTSTRAP__;

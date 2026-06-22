@@ -5,6 +5,7 @@ import secrets
 import sqlite3
 
 from buddys_api.auth_models import AuthResult, SessionPublic, UserPublic
+from buddys_api.db import connection_lock
 from buddys_api.schemas import new_id, now_iso
 
 
@@ -23,9 +24,11 @@ class InvalidCredentialsError(ValueError):
 class AuthStore:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
+        self._connection_lock = connection_lock(connection)
 
     def register_user(self, email: str, password: str, display_name: str | None = None) -> UserPublic:
         normalized_email = _normalize_email(email)
+        password_hash = hash_password(password)
         user = UserPublic(
             user_id=new_id("user"),
             email=normalized_email,
@@ -33,29 +36,31 @@ class AuthStore:
             created_at=now_iso(),
         )
         try:
-            with self.connection:
-                self.connection.execute(
-                    """
-                    INSERT INTO users (user_id, email, display_name, password_hash, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        user.user_id,
-                        user.email,
-                        user.display_name,
-                        hash_password(password),
-                        user.created_at,
-                    ),
-                )
+            with self._connection_lock:
+                with self.connection:
+                    self.connection.execute(
+                        """
+                        INSERT INTO users (user_id, email, display_name, password_hash, created_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user.user_id,
+                            user.email,
+                            user.display_name,
+                            password_hash,
+                            user.created_at,
+                        ),
+                    )
         except sqlite3.IntegrityError as exc:
             raise DuplicateEmailError(f"email already registered: {normalized_email}") from exc
         return user
 
     def login(self, email: str, password: str) -> AuthResult:
-        row = self.connection.execute(
-            "SELECT user_id, email, display_name, password_hash, created_at FROM users WHERE email = ?",
-            (_normalize_email(email),),
-        ).fetchone()
+        with self._connection_lock:
+            row = self.connection.execute(
+                "SELECT user_id, email, display_name, password_hash, created_at FROM users WHERE email = ?",
+                (_normalize_email(email),),
+            ).fetchone()
         if row is None or not verify_password(password, row["password_hash"]):
             raise InvalidCredentialsError("invalid credentials")
         user = _user_from_row(row)
@@ -64,27 +69,29 @@ class AuthStore:
     def issue_session(self, user: UserPublic) -> AuthResult:
         access_token = secrets.token_urlsafe(32)
         session = SessionPublic(session_id=new_id("sess"), user_id=user.user_id, created_at=now_iso())
-        with self.connection:
-            self.connection.execute(
-                """
-                INSERT INTO sessions (session_id, user_id, token_hash, created_at, revoked_at)
-                VALUES (?, ?, ?, ?, NULL)
-                """,
-                (session.session_id, session.user_id, hash_session_token(access_token), session.created_at),
-            )
+        with self._connection_lock:
+            with self.connection:
+                self.connection.execute(
+                    """
+                    INSERT INTO sessions (session_id, user_id, token_hash, created_at, revoked_at)
+                    VALUES (?, ?, ?, ?, NULL)
+                    """,
+                    (session.session_id, session.user_id, hash_session_token(access_token), session.created_at),
+                )
         return AuthResult(user=user, session=session, access_token=access_token)
 
     def authenticate_token(self, access_token: str) -> UserPublic | None:
         token_hash = hash_session_token(access_token)
-        rows = self.connection.execute(
-            """
-            SELECT sessions.session_id, sessions.token_hash, users.user_id, users.email, users.display_name, users.created_at
-            FROM sessions
-            JOIN users ON users.user_id = sessions.user_id
-            WHERE sessions.revoked_at IS NULL
-            ORDER BY sessions.created_at DESC
-            """
-        ).fetchall()
+        with self._connection_lock:
+            rows = self.connection.execute(
+                """
+                SELECT sessions.session_id, sessions.token_hash, users.user_id, users.email, users.display_name, users.created_at
+                FROM sessions
+                JOIN users ON users.user_id = sessions.user_id
+                WHERE sessions.revoked_at IS NULL
+                ORDER BY sessions.created_at DESC
+                """
+            ).fetchall()
         for row in rows:
             if _matches_session_token_hash(token_hash, row["token_hash"]):
                 return _user_from_row(row)
@@ -92,16 +99,18 @@ class AuthStore:
 
     def logout(self, access_token: str) -> bool:
         token_hash = hash_session_token(access_token)
-        rows = self.connection.execute(
-            "SELECT session_id, token_hash FROM sessions WHERE revoked_at IS NULL"
-        ).fetchall()
+        with self._connection_lock:
+            rows = self.connection.execute(
+                "SELECT session_id, token_hash FROM sessions WHERE revoked_at IS NULL"
+            ).fetchall()
         for row in rows:
             if _matches_session_token_hash(token_hash, row["token_hash"]):
-                with self.connection:
-                    self.connection.execute(
-                        "UPDATE sessions SET revoked_at = ? WHERE session_id = ?",
-                        (now_iso(), row["session_id"]),
-                    )
+                with self._connection_lock:
+                    with self.connection:
+                        self.connection.execute(
+                            "UPDATE sessions SET revoked_at = ? WHERE session_id = ?",
+                            (now_iso(), row["session_id"]),
+                        )
                 return True
         return False
 

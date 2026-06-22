@@ -1,22 +1,41 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 
 DbPath = str | Path
+ConnectionLock = threading.RLock
+
+_CONNECTION_LOCKS: dict[int, ConnectionLock] = {}
+_CONNECTION_LOCKS_GUARD = threading.Lock()
+
+
+def connection_lock(connection: sqlite3.Connection) -> ConnectionLock:
+    connection_id = id(connection)
+    with _CONNECTION_LOCKS_GUARD:
+        lock = _CONNECTION_LOCKS.get(connection_id)
+        if lock is None:
+            lock = threading.RLock()
+            _CONNECTION_LOCKS[connection_id] = lock
+    return lock
 
 
 def connect_db(path: DbPath) -> sqlite3.Connection:
     connection = sqlite3.connect(path, check_same_thread=False)
+    lock = connection_lock(connection)
     connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
+    with lock:
+        connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 
 def initialize_database(connection: sqlite3.Connection) -> None:
-    connection.executescript(
-        """
+    lock = connection_lock(connection)
+    with lock:
+        connection.executescript(
+            """
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
             email TEXT NOT NULL UNIQUE,
@@ -360,32 +379,32 @@ def initialize_database(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_engagement_events_type_created
             ON engagement_events(event_type, created_at);
-        """
-    )
-    buddy_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(buddies)").fetchall()
-    }
-    if "created_via" not in buddy_columns:
-        connection.execute("ALTER TABLE buddies ADD COLUMN created_via TEXT NOT NULL DEFAULT 'auth'")
-        connection.execute(
-            """
-            UPDATE buddies
-            SET created_via = 'legacy'
-            WHERE user_id NOT IN (SELECT user_id FROM users)
             """
         )
-    state_memory_pending_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(state_memory_pending_proposals)").fetchall()
-    }
-    if "unrecognized_json" not in state_memory_pending_columns:
-        connection.execute(
-            "ALTER TABLE state_memory_pending_proposals ADD COLUMN unrecognized_json TEXT NOT NULL DEFAULT '[]'"
-        )
-    usage_ledger_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(usage_ledger)").fetchall()
-    }
-    if "estimated" not in usage_ledger_columns:
-        connection.execute(
-            "ALTER TABLE usage_ledger ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0 CHECK (estimated IN (0, 1))"
-        )
-    connection.commit()
+        buddy_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(buddies)").fetchall()
+        }
+        if "created_via" not in buddy_columns:
+            connection.execute("ALTER TABLE buddies ADD COLUMN created_via TEXT NOT NULL DEFAULT 'auth'")
+            connection.execute(
+                """
+                UPDATE buddies
+                SET created_via = 'legacy'
+                WHERE user_id NOT IN (SELECT user_id FROM users)
+                """
+            )
+        state_memory_pending_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(state_memory_pending_proposals)").fetchall()
+        }
+        if "unrecognized_json" not in state_memory_pending_columns:
+            connection.execute(
+                "ALTER TABLE state_memory_pending_proposals ADD COLUMN unrecognized_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        usage_ledger_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(usage_ledger)").fetchall()
+        }
+        if "estimated" not in usage_ledger_columns:
+            connection.execute(
+                "ALTER TABLE usage_ledger ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0 CHECK (estimated IN (0, 1))"
+            )
+        connection.commit()

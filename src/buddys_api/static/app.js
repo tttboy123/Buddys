@@ -22,6 +22,16 @@ const state = {
     summary: {},
     traces: [],
     costSummary: {},
+    engagementMetrics: null,
+    retentionSummary: null,
+    founderMetricsVisible: false,
+    founderMetricsUnavailableReason: null,
+    device: null,
+    agentMachine: null,
+    binding: null,
+    latestHeartbeat: null,
+    desiredState: null,
+    deviceEvents: [],
     stateRevision: 0,
   },
   ui: {
@@ -41,6 +51,8 @@ const state = {
       supported: false,
       recording: false,
     },
+    deviceReminderDraftsByBuddy: {},
+    founderMetricsRequestGeneration: 0,
   },
 };
 
@@ -176,6 +188,16 @@ function clearSession() {
   state.workspace.summary = {};
   state.workspace.traces = [];
   state.workspace.costSummary = {};
+  state.workspace.engagementMetrics = null;
+  state.workspace.retentionSummary = null;
+  state.workspace.founderMetricsVisible = false;
+  state.workspace.founderMetricsUnavailableReason = null;
+  state.workspace.device = null;
+  state.workspace.agentMachine = null;
+  state.workspace.binding = null;
+  state.workspace.latestHeartbeat = null;
+  state.workspace.desiredState = null;
+  state.workspace.deviceEvents = [];
   state.workspace.stateRevision = 0;
   state.ui.selectedProposalId = null;
   state.ui.detailsOpen = false;
@@ -183,10 +205,13 @@ function clearSession() {
   state.ui.proactiveHint = null;
   state.ui.photo = { base64: null, mediaType: null, previewUrl: null, fileName: null };
   state.ui.voice = { transcript: "", status: "idle", supported: voiceRecognitionSupported(), recording: false };
+  state.ui.deviceReminderDraftsByBuddy = {};
+  state.ui.founderMetricsRequestGeneration += 1;
   localStorage.removeItem(SESSION_STORAGE_KEY);
   $("authPasswordInput").value = "";
   $("authDisplayNameInput").value = "";
   $("authInviteCodeInput").value = "";
+  $("deviceOwnerInstructionInput").value = "";
   renderExperienceShell();
 }
 
@@ -203,8 +228,10 @@ function isRecoveredSessionExpiry(error) {
 function syncAuthControls() {
   const signedIn = isAuthenticated();
   const hasBuddy = Boolean(state.workspace.buddyId);
+  const hasDevice = Boolean(state.workspace.device);
   const hasPhoto = Boolean(state.ui.photo.base64);
   const hasVoiceTranscript = Boolean(state.ui.voice.transcript.trim());
+  const hasDeviceInstruction = Boolean($("deviceOwnerInstructionInput")?.value.trim());
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
@@ -223,6 +250,8 @@ function syncAuthControls() {
   $("querySubmitButton").disabled = !hasBuddy;
   $("proposalCorrectionInput").disabled = !hasBuddy || !selectedProposal();
   $("submitCorrectionButton").disabled = !hasBuddy || !selectedProposal();
+  $("deviceOwnerInstructionInput").disabled = !hasBuddy || !hasDevice;
+  $("publishDeviceDesiredStateButton").disabled = !hasBuddy || !hasDevice || !hasDeviceInstruction;
 }
 
 function renderAuthRail() {
@@ -643,6 +672,161 @@ function renderDetailsDrawer() {
   renderAnswerBasisPanel();
 }
 
+function founderMetricRows(title, rows) {
+  const fragment = document.createDocumentFragment();
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  fragment.appendChild(heading);
+  rows.forEach((row) => {
+    const line = document.createElement("p");
+    line.className = "support-copy";
+    line.textContent = row;
+    fragment.appendChild(line);
+  });
+  return fragment;
+}
+
+function renderFounderMetricCard(targetId, title, rows) {
+  const card = $(targetId);
+  const eyebrow = card.querySelector(".eyebrow");
+  const heading = card.querySelector("h3");
+  if (heading) {
+    heading.textContent = title;
+  }
+  Array.from(card.children).forEach((child) => {
+    if (child !== eyebrow && child !== heading) {
+      card.removeChild(child);
+    }
+  });
+  rows.forEach((row) => {
+    const line = document.createElement("p");
+    line.className = "support-copy";
+    line.textContent = row;
+    card.appendChild(line);
+  });
+}
+
+function captureMixRows(captureBySource) {
+  const entries = Object.entries(captureBySource || {});
+  if (!entries.length) {
+    return ["No founder capture metrics yet."];
+  }
+  return entries.map(([source, count]) => `${source}: ${count}`);
+}
+
+function renderFounderMetrics() {
+  $("founderMetricsPanel").hidden = !state.workspace.founderMetricsVisible;
+  if (!state.workspace.founderMetricsVisible) {
+    return;
+  }
+
+  const unavailableReason = state.workspace.founderMetricsUnavailableReason;
+  if (unavailableReason) {
+    $("founderMetricsStatus").textContent = `Founder metrics unavailable: ${unavailableReason}`;
+    renderFounderMetricCard("founderActivationPanel", "My activation", ["Founder metrics unavailable"]);
+    renderFounderMetricCard("founderRetentionPanel", "Activated retention", ["Founder metrics unavailable"]);
+    renderFounderMetricCard("founderCaptureMixPanel", "Capture sources", ["Founder metrics unavailable"]);
+    return;
+  }
+
+  const engagement = state.workspace.engagementMetrics || {};
+  const retention = state.workspace.retentionSummary || {};
+  const activated = Boolean(engagement.activation?.completed_first_capture_confirm_query);
+
+  $("founderMetricsStatus").textContent = "Founder metrics are live for this account.";
+  renderFounderMetricCard("founderActivationPanel", "My activation", [
+    activated ? "Closed first capture -> review -> query loop: yes" : "Closed first capture -> review -> query loop: no",
+    `Tracked events: ${engagement.event_count || 0}`,
+  ]);
+  renderFounderMetricCard("founderRetentionPanel", "Activated retention", [
+    `Activated users: ${retention.activated_users || 0}`,
+    `D1 active: ${retention.d1_active_users || 0}`,
+    `D3 active: ${retention.d3_active_users || 0}`,
+    `D7 active: ${retention.d7_active_users || 0}`,
+  ]);
+  renderFounderMetricCard("founderCaptureMixPanel", "Capture sources", captureMixRows(retention.capture_by_source));
+}
+
+function renderDeviceWorkspace() {
+  const device = state.workspace.device;
+  const heartbeat = state.workspace.latestHeartbeat;
+  const desiredState = state.workspace.desiredState;
+  const binding = state.workspace.binding;
+  const agentMachine = state.workspace.agentMachine;
+  const deviceEvents = state.workspace.deviceEvents || [];
+
+  if (!isAuthenticated()) {
+    $("deviceWorkspaceStatus").textContent = "Login to inspect the paired device for this Buddy.";
+    $("deviceOwnerInstructionInput").value = "";
+    renderFounderMetricCard("deviceIdentityPanel", "Device identity", ["No paired device yet."]);
+    renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", ["No paired device yet."]);
+    renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", ["No paired device yet."]);
+    renderFounderMetricCard("deviceEventPanel", "Recent device events", ["No paired device yet."]);
+    renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", ["No paired device yet."]);
+    syncAuthControls();
+    return;
+  }
+
+  if (!state.workspace.buddyId) {
+    $("deviceWorkspaceStatus").textContent = "Create your first Buddy to inspect its device.";
+    $("deviceOwnerInstructionInput").value = "";
+    renderFounderMetricCard("deviceIdentityPanel", "Device identity", ["No paired device yet."]);
+    renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", ["No paired device yet."]);
+    renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", ["No paired device yet."]);
+    renderFounderMetricCard("deviceEventPanel", "Recent device events", ["No paired device yet."]);
+    renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", ["No paired device yet."]);
+    syncAuthControls();
+    return;
+  }
+
+  if (!device) {
+    $("deviceWorkspaceStatus").textContent = "No paired device yet.";
+    delete state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId];
+    $("deviceOwnerInstructionInput").value = "";
+    renderFounderMetricCard("deviceIdentityPanel", "Device identity", ["No paired device yet."]);
+    renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", ["No paired device yet."]);
+    renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", ["No paired device yet."]);
+    renderFounderMetricCard("deviceEventPanel", "Recent device events", ["No paired device yet."]);
+    renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", ["No paired device yet."]);
+    syncAuthControls();
+    return;
+  }
+
+  $("deviceWorkspaceStatus").textContent = "Owner-auth desired state can be published from this browser.";
+  $("deviceOwnerInstructionInput").value = state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId] || "";
+  renderFounderMetricCard("deviceIdentityPanel", "Device identity", [
+    `Device: ${device.device_id}`,
+    `Firmware: ${device.firmware_version || "-"}`,
+    `Space: ${device.space_id}`,
+  ]);
+  renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", [
+    heartbeat ? `Current state: ${heartbeat.current_state}` : "Current state: unknown",
+    heartbeat ? `Wi-Fi RSSI: ${heartbeat.wifi_rssi}` : "Wi-Fi RSSI: unknown",
+    heartbeat ? `Uptime: ${heartbeat.uptime_seconds}s` : "Uptime: unknown",
+    heartbeat ? `Heartbeat: ${heartbeat.created_at}` : "Heartbeat: waiting for first heartbeat",
+  ]);
+  renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", [
+    `Desired state: ${desiredState?.state || "idle"}`,
+    `Revision: ${desiredState?.revision || 0}`,
+    `Manual required: ${desiredState?.manual_required ? "yes" : "no"}`,
+    desiredState?.updated_at ? `Updated: ${desiredState.updated_at}` : "Updated: -",
+  ]);
+  renderFounderMetricCard(
+    "deviceEventPanel",
+    "Recent device events",
+    deviceEvents.length
+      ? deviceEvents.slice(-5).reverse().map((event) => `${event.event_type} · ${event.created_at}`)
+      : ["No device events yet."],
+  );
+  renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", [
+    binding ? `Role: ${binding.role}` : "Role: unbound",
+    binding ? `Authority epoch: ${binding.authority_epoch}` : "Authority epoch: -",
+    agentMachine ? `Machine: ${agentMachine.agent_machine_id} · ${agentMachine.machine_type}` : "Machine: none",
+    agentMachine ? `Machine status: ${agentMachine.status}` : "Machine status: unknown",
+  ]);
+  syncAuthControls();
+}
+
 function renderExperienceShell() {
   renderAuthRail();
   renderBuddyHero();
@@ -653,6 +837,8 @@ function renderExperienceShell() {
   renderRecentActivity();
   renderProactiveMemoryCard();
   renderDetailsDrawer();
+  renderFounderMetrics();
+  renderDeviceWorkspace();
 }
 
 function toggleDetailsDrawer(forceOpen) {
@@ -677,7 +863,7 @@ async function restoreSession() {
     }
     clearSession();
     setAuthStatus("Stored session expired. Please login again.", "error");
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   }
 }
 
@@ -793,8 +979,7 @@ async function createMyBuddy() {
 }
 
 async function loadAuthWorkspace() {
-  await loadAuthBuddies();
-  await loadSyncSnapshot();
+  await refreshWorkspace();
 }
 
 function projectWorkspace(snapshot) {
@@ -810,6 +995,16 @@ function projectWorkspace(snapshot) {
     state.workspace.summary = {};
     state.workspace.traces = [];
     state.workspace.costSummary = {};
+    state.workspace.engagementMetrics = null;
+    state.workspace.retentionSummary = null;
+    state.workspace.founderMetricsVisible = false;
+    state.workspace.founderMetricsUnavailableReason = null;
+    state.workspace.device = null;
+    state.workspace.agentMachine = null;
+    state.workspace.binding = null;
+    state.workspace.latestHeartbeat = null;
+    state.workspace.desiredState = null;
+    state.workspace.deviceEvents = [];
     state.ui.proactiveHint = null;
   } else {
     state.workspace.stateRevision = snapshot.state_revision || 0;
@@ -828,6 +1023,26 @@ function projectWorkspace(snapshot) {
     state.workspace.summary = buddyId ? stateMemory.summary_by_buddy?.[buddyId] || {} : {};
     state.workspace.traces = snapshot.traces || [];
     state.workspace.costSummary = snapshot.cost_summary || {};
+    const devices = snapshot.devices || [];
+    const bindings = snapshot.bindings || [];
+    const agentMachines = snapshot.agent_machines || [];
+    const latestHeartbeats = snapshot.latest_heartbeats || {};
+    const desiredStates = snapshot.desired_states || {};
+    const deviceEvents = snapshot.device_events || [];
+    state.workspace.device = devices.find((entry) => entry.buddy_id === buddyId) || null;
+    state.workspace.binding = bindings.find((entry) => entry.buddy_id === buddyId) || null;
+    state.workspace.agentMachine = state.workspace.binding
+      ? agentMachines.find((entry) => entry.agent_machine_id === state.workspace.binding.agent_machine_id) || null
+      : null;
+    state.workspace.latestHeartbeat = state.workspace.device
+      ? latestHeartbeats[state.workspace.device.device_id] || null
+      : null;
+    state.workspace.desiredState = state.workspace.device
+      ? desiredStates[state.workspace.device.device_id] || null
+      : null;
+    state.workspace.deviceEvents = state.workspace.device
+      ? deviceEvents.filter((entry) => entry.device_id === state.workspace.device.device_id)
+      : [];
     state.ui.proactiveHint = state.workspace.proactiveHint;
   }
 
@@ -841,10 +1056,101 @@ function projectWorkspace(snapshot) {
   }
 }
 
+async function loadFounderMetrics() {
+  if (!isAuthenticated()) {
+    state.workspace.engagementMetrics = null;
+    state.workspace.retentionSummary = null;
+    state.workspace.founderMetricsVisible = false;
+    state.workspace.founderMetricsUnavailableReason = null;
+    renderFounderMetrics();
+    return;
+  }
+
+  const requestGeneration = ++state.ui.founderMetricsRequestGeneration;
+  const requestSessionToken = state.auth.accessToken;
+
+  try {
+    const retentionSummary = await requestJson("/metrics/retention-summary", { headers: {} });
+    const engagementMetrics = await requestJson("/metrics/engagement", { headers: {} });
+    if (
+      requestGeneration !== state.ui.founderMetricsRequestGeneration ||
+      requestSessionToken !== state.auth.accessToken ||
+      !isAuthenticated()
+    ) {
+      return;
+    }
+    state.workspace.engagementMetrics = engagementMetrics;
+    state.workspace.retentionSummary = retentionSummary;
+    state.workspace.founderMetricsVisible = true;
+    state.workspace.founderMetricsUnavailableReason = null;
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    if (
+      requestGeneration !== state.ui.founderMetricsRequestGeneration ||
+      requestSessionToken !== state.auth.accessToken ||
+      !isAuthenticated()
+    ) {
+      return;
+    }
+    const detailCode = error.payload?.detail?.code;
+    state.workspace.engagementMetrics = null;
+    state.workspace.retentionSummary = null;
+    if (error.status === 403 && detailCode === "founder_metrics_forbidden") {
+      state.workspace.founderMetricsVisible = false;
+      state.workspace.founderMetricsUnavailableReason = null;
+    } else {
+      state.workspace.founderMetricsVisible = true;
+      state.workspace.founderMetricsUnavailableReason = error.message;
+    }
+  }
+  renderFounderMetrics();
+}
+
 async function loadSyncSnapshot() {
   const snapshot = await requestJson("/sync/snapshot", { headers: {} });
   projectWorkspace(snapshot);
   renderExperienceShell();
+}
+
+async function refreshWorkspace() {
+  await loadAuthBuddies();
+  await loadSyncSnapshot();
+  loadFounderMetrics().catch(() => {});
+}
+
+async function publishDeviceDesiredState() {
+  if (!state.workspace.buddyId || !state.workspace.device) {
+    $("deviceWorkspaceStatus").textContent = "No paired device yet.";
+    return;
+  }
+  const instruction = $("deviceOwnerInstructionInput").value.trim();
+  if (!instruction) {
+    $("deviceWorkspaceStatus").textContent = "Manual reminder text is required.";
+    syncAuthControls();
+    return;
+  }
+  try {
+    const response = await requestJson(
+      `/me/buddies/${state.workspace.buddyId}/devices/${state.workspace.device.device_id}/desired-state`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          reminder_text: instruction,
+        }),
+      },
+    );
+    state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId] = "";
+    $("deviceOwnerInstructionInput").value = "";
+    await refreshWorkspace();
+    $("deviceWorkspaceStatus").textContent = `Desired state published at revision ${response.desired_state.revision}.`;
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    $("deviceWorkspaceStatus").textContent = `Publish failed: ${error.message}`;
+  }
 }
 
 async function submitCapture() {
@@ -869,7 +1175,7 @@ async function submitCapture() {
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
     setWorkspaceStatus(`Capture saved as pending proposal: ${response.proposal.content}`);
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -896,7 +1202,7 @@ async function submitPhotoCapture() {
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
     setWorkspaceStatus(`Photo saved as pending proposal: ${response.proposal.content}`);
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -925,7 +1231,7 @@ async function submitVoiceTranscript() {
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
     setWorkspaceStatus(`Reviewed transcript saved as pending note: ${response.proposal.content}`);
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -951,7 +1257,7 @@ async function submitQuery() {
     });
     $("queryTextInput").value = "";
     setWorkspaceStatus(`Query answered: ${answer.summary}`);
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -971,7 +1277,7 @@ async function confirmProposal(proposalId) {
       $("proposalCorrectionInput").value = "";
     }
     setWorkspaceStatus("Proposal confirmed.");
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -991,7 +1297,7 @@ async function rejectProposal(proposalId) {
       $("proposalCorrectionInput").value = "";
     }
     setWorkspaceStatus("Proposal rejected.");
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -1021,7 +1327,7 @@ async function submitCorrection() {
     state.ui.selectedProposalId = null;
     $("proposalCorrectionInput").value = "";
     setWorkspaceStatus("Correction applied.");
-    await loadSyncSnapshot();
+    await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
@@ -1057,6 +1363,13 @@ document.addEventListener("DOMContentLoaded", () => {
   $("querySubmitButton").addEventListener("click", submitQuery);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
   $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);
+  $("deviceOwnerInstructionInput").addEventListener("input", () => {
+    if (state.workspace.buddyId && state.workspace.device) {
+      state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId] = $("deviceOwnerInstructionInput").value;
+    }
+    syncAuthControls();
+  });
+  $("publishDeviceDesiredStateButton").addEventListener("click", publishDeviceDesiredState);
   $("detailsDrawer").addEventListener("toggle", () => {
     state.ui.detailsOpen = $("detailsDrawer").open;
   });
