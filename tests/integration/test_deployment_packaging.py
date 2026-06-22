@@ -1,4 +1,5 @@
 from pathlib import Path
+from stat import S_IXUSR
 import subprocess
 import sys
 
@@ -82,6 +83,15 @@ def test_tencent_deployment_packaging_includes_service_nginx_and_installer() -> 
     assert "metadata.tencentyun.com/latest/meta-data/public-ipv4" in public_ip_helper
     assert "metadata.tencentyun.com/meta-data/public-ipv4" in public_ip_helper
     assert "hostname -I" in public_ip_helper
+
+
+def test_tencent_service_execstart_does_not_depend_on_wrapper_exec_bit() -> None:
+    deploy_root = REPO_ROOT / "deploy" / "tencent"
+    service = (deploy_root / "buddys.service").read_text(encoding="utf-8")
+    wrapper_mode = (deploy_root / "run_with_env_compat.sh").stat().st_mode
+
+    assert "ExecStart=/usr/bin/env bash /opt/buddys/deploy/tencent/run_with_env_compat.sh" in service
+    assert wrapper_mode & S_IXUSR
 
 
 def test_tencent_public_ip_helper_prefers_metadata_public_ipv4_over_private_hostname(tmp_path) -> None:
