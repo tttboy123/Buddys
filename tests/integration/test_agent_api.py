@@ -141,6 +141,52 @@ def test_agent_heartbeat_updates_only_owner_agent_and_emits_safe_sync_event(tmp_
     assert "password" not in serialized
 
 
+def test_agent_heartbeat_keeps_existing_version_when_version_omitted(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+    agent = client.post(
+        "/agents",
+        headers={"Authorization": f"Bearer {token}"},
+        json=valid_agent_payload() | {"version": "0.9.1", "role": "hardware_simulator"},
+    ).json()
+
+    response = client.post(
+        f"/agents/{agent['agent_id']}/heartbeat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "status": "online",
+            "capabilities": {
+                "simulates": ["heartbeat"],
+                "token": "token-should-not-leak",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["version"] == "0.9.1"
+    assert updated["status"] == "online"
+    assert updated["capabilities"] == {"simulates": ["heartbeat"]}
+
+
+def test_agent_heartbeat_rejects_blank_version_string(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "owner@example.com")
+    agent = client.post(
+        "/agents",
+        headers={"Authorization": f"Bearer {token}"},
+        json=valid_agent_payload() | {"version": "1.0.0"},
+    ).json()
+
+    response = client.post(
+        f"/agents/{agent['agent_id']}/heartbeat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"status": "offline", "version": "   "},
+    )
+
+    assert response.status_code == 422
+
+
 def test_agent_api_rejects_invalid_roles_statuses_and_raw_secret_fields(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     token = register(client, "owner@example.com")
