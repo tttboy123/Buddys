@@ -125,6 +125,38 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert "Why this answer / details" in html
 
 
+def test_console_html_wraps_auth_password_field_and_actions_in_a_real_form() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+    auth_form_match = re.search(r'<form[^>]+id="authForm"[^>]*>(?P<body>.*?)</form>', html, re.S)
+
+    assert auth_form_match is not None
+    auth_form_body = auth_form_match.group("body")
+    assert 'id="authEmailInput"' in auth_form_body
+    assert 'id="authPasswordInput"' in auth_form_body
+    assert 'id="authDisplayNameInput"' in auth_form_body
+    assert 'id="authInviteCodeInput"' in auth_form_body
+    assert 'id="authRegisterButton"' in auth_form_body
+    assert 'id="authLoginButton"' in auth_form_body
+    assert 'id="authLogoutButton"' in auth_form_body
+    assert 'id="authBuddySelect"' not in auth_form_body
+
+
+def test_console_html_sets_auth_input_autocomplete_hints() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+    compact_html = " ".join(html.split())
+
+    assert 'id="authEmailInput" type="email" placeholder="owner@example.com" autocomplete="email"' in compact_html
+    assert (
+        'id="authPasswordInput" type="password" placeholder="correct horse battery staple" '
+        'autocomplete="current-password"' in compact_html
+    )
+    assert 'id="authDisplayNameInput" type="text" placeholder="Kitchen owner" autocomplete="nickname"' in compact_html
+
+
 def test_console_html_exposes_user_transparency_surfaces_without_operator_panels() -> None:
     client = make_client()
 

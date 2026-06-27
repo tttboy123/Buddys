@@ -16,18 +16,23 @@
           </div>
           <p id="authStatus" class="support-copy">Signed out. Login to use state memory.</p>
         </div>
-        <div class="auth-grid">
+        <form id="authForm" class="auth-grid" novalidate>
           <label class="field">
             <span>Email</span>
-            <input id="authEmailInput" type="email" placeholder="owner@example.com" />
+            <input id="authEmailInput" type="email" placeholder="owner@example.com" autocomplete="email" />
           </label>
           <label class="field">
             <span>Password</span>
-            <input id="authPasswordInput" type="password" placeholder="correct horse battery staple" />
+            <input
+              id="authPasswordInput"
+              type="password"
+              placeholder="correct horse battery staple"
+              autocomplete="current-password"
+            />
           </label>
           <label class="field">
             <span>Display name</span>
-            <input id="authDisplayNameInput" type="text" placeholder="Kitchen owner" />
+            <input id="authDisplayNameInput" type="text" placeholder="Kitchen owner" autocomplete="nickname" />
           </label>
           <label class="field">
             <span>Invite code</span>
@@ -38,7 +43,7 @@
             <button id="authLoginButton" class="primary-button" type="button">Login</button>
             <button id="authLogoutButton" class="ghost-button" type="button" disabled>Logout</button>
           </div>
-        </div>
+        </form>
         <div class="workspace-grid">
           <label class="field">
             <span>My Buddy</span>
