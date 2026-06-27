@@ -136,7 +136,11 @@ def test_console_html_exposes_user_transparency_surfaces_without_operator_panels
     assert "See what Buddy remembers, what it just did, and why it answered that way." in html
     assert "What Buddy just did" in html
     assert "Why Buddy thinks that" in html
-    assert "Agent management" not in html
+    assert 'id="agentManagementPanel"' in html
+    assert 'id="agentManagementTitle"' in html
+    assert 'id="agentManagementStatus"' in html
+    assert 'id="agentManagementList"' in html
+    assert "Agent and machine workspace" in html
     assert "Provider settings" not in html
     assert "Cost governance" not in html
 
@@ -207,9 +211,33 @@ def test_console_assets_project_safe_recent_activity_for_transparency_view() -> 
     assert "Waiting for review:" not in format_recent_activity_body
     assert "Answered:" not in format_recent_activity_body
     assert "api_key" not in script
-    assert "agentManagementPanel" not in script
+    assert "renderAgentManagement" in script
+    assert "snapshot.agents" in project_workspace_body
+    assert "state.workspace.agents = snapshot.agents || [];" in project_workspace_body
+    assert "snapshot.agent_machines" in project_workspace_body
+    assert "state.workspace.agentMachines = agentMachines;" in project_workspace_body
     assert "providerSettingsPanel" not in script
     assert "costGovernancePanel" not in script
+
+
+def test_console_assets_project_workspace_maps_agents_and_renders_agent_management_panel() -> None:
+    client = make_client()
+
+    html = client.get("/console").text
+    script = client.get("/static/app.js").text
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+    render_agent_management_body = extract_function_body(script, "renderAgentManagement")
+
+    assert 'id="agentManagementPanel"' in html
+    assert 'id="agentManagementList"' in html
+    assert "snapshot.agents" in project_workspace_body
+    assert "state.workspace.agents = snapshot.agents || [];" in project_workspace_body
+    assert "snapshot.agent_machines" in project_workspace_body
+    assert "state.workspace.agentMachines = agentMachines;" in project_workspace_body
+    assert "renderAgentManagement" in script
+    assert "agentManagementStatus" in render_agent_management_body
+    assert "state.workspace.agents.length" in render_agent_management_body
+    assert "state.workspace.agentMachines.length" in render_agent_management_body
 
 
 def test_console_assets_render_latest_answer_as_user_altitude_transparency_copy() -> None:

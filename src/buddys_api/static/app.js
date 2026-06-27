@@ -14,6 +14,8 @@ const state = {
   workspace: {
     buddyId: null,
     buddies: [],
+    agents: [],
+    agentMachines: [],
     confirmedItems: [],
     pendingProposals: [],
     latestQuery: null,
@@ -180,6 +182,8 @@ function clearSession() {
   state.auth.user = null;
   state.workspace.buddyId = null;
   state.workspace.buddies = [];
+  state.workspace.agents = [];
+  state.workspace.agentMachines = [];
   state.workspace.confirmedItems = [];
   state.workspace.pendingProposals = [];
   state.workspace.latestQuery = null;
@@ -827,6 +831,108 @@ function renderDeviceWorkspace() {
   syncAuthControls();
 }
 
+function renderAgentManagement() {
+  const hasWorkspace = isAuthenticated();
+  const hasAgents = Boolean(state.workspace.agents.length);
+  const hasAgentMachines = Boolean(state.workspace.agentMachines.length);
+
+  if (!hasWorkspace) {
+    renderTextList(
+      "agentManagementList",
+      ["Sign in to inspect registered agents and agent machines."],
+      "Sign in to inspect registered agents and agent machines.",
+      (line) => line,
+    );
+    $("agentManagementStatus").textContent = "Sign in to inspect registered agents and agent machines.";
+    return;
+  }
+
+  const list = $("agentManagementList");
+  list.replaceChildren();
+
+  if (!hasAgents && !hasAgentMachines) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = "No agents or agent machines are registered yet.";
+    list.appendChild(emptyItem);
+    $("agentManagementStatus").textContent = "No agents or agent machines are registered yet.";
+    return;
+  }
+
+  if (hasAgents) {
+    const agentHeader = document.createElement("li");
+    agentHeader.className = "proposal-card";
+    const headerTitle = document.createElement("strong");
+    headerTitle.textContent = "Registered agents";
+    agentHeader.appendChild(headerTitle);
+    list.appendChild(agentHeader);
+
+    state.workspace.agents.forEach((agent) => {
+      const item = document.createElement("li");
+      item.className = "proposal-card";
+      const heading = document.createElement("strong");
+      const agentName = agent.name || "Unnamed agent";
+      const agentRole = agent.role || "unknown";
+      heading.textContent = `${agentName} · ${agentRole}`;
+      item.appendChild(heading);
+
+      const meta = document.createElement("p");
+      meta.className = "support-copy";
+      meta.textContent = `Status: ${agent.status} · Version: ${agent.version || "-"}`;
+      item.appendChild(meta);
+
+      const ids = document.createElement("p");
+      ids.className = "support-copy";
+      ids.textContent = `Agent ID: ${agent.agent_id}`;
+      item.appendChild(ids);
+
+      const lastSeen = document.createElement("p");
+      lastSeen.className = "support-copy";
+      lastSeen.textContent = `Last seen: ${agent.last_seen || "never"}`;
+      item.appendChild(lastSeen);
+
+      list.appendChild(item);
+    });
+  }
+
+  if (hasAgentMachines) {
+    const machineHeader = document.createElement("li");
+    machineHeader.className = "proposal-card";
+    const machineTitle = document.createElement("strong");
+    machineTitle.textContent = "Agent machines";
+    machineHeader.appendChild(machineTitle);
+    list.appendChild(machineHeader);
+
+    state.workspace.agentMachines.forEach((agentMachine) => {
+      const item = document.createElement("li");
+      item.className = "proposal-card";
+      const header = document.createElement("strong");
+      const machineType = agentMachine.machine_type || "agent-machine";
+      const machineStatus = agentMachine.status || "unknown";
+      header.textContent = `${machineType} · ${machineStatus}`;
+      item.appendChild(header);
+
+      const machineId = document.createElement("p");
+      machineId.className = "support-copy";
+      machineId.textContent = `Machine ID: ${agentMachine.agent_machine_id || "-"}`;
+      item.appendChild(machineId);
+
+      const machineVersion = document.createElement("p");
+      machineVersion.className = "support-copy";
+      machineVersion.textContent = `Runtime: ${agentMachine.runtime_version || "-"}`;
+      item.appendChild(machineVersion);
+
+      const machineOwner = document.createElement("p");
+      machineOwner.className = "support-copy";
+      machineOwner.textContent = `Owner: ${agentMachine.owner_user_id || "-"}`;
+      item.appendChild(machineOwner);
+
+      list.appendChild(item);
+    });
+  }
+
+  $("agentManagementStatus").textContent = `Agents: ${state.workspace.agents.length} · Agent machines: ${state.workspace.agentMachines.length}`;
+}
+
 function renderExperienceShell() {
   renderAuthRail();
   renderBuddyHero();
@@ -834,6 +940,7 @@ function renderExperienceShell() {
   renderCaptureComposer();
   renderProposalInbox();
   renderLatestAnswer();
+  renderAgentManagement();
   renderRecentActivity();
   renderProactiveMemoryCard();
   renderDetailsDrawer();
@@ -986,7 +1093,9 @@ function projectWorkspace(snapshot) {
   if (!isAuthenticated()) {
     state.workspace.stateRevision = 0;
     state.workspace.buddies = [];
+    state.workspace.agents = [];
     state.workspace.buddyId = null;
+    state.workspace.agentMachines = [];
     state.workspace.confirmedItems = [];
     state.workspace.pendingProposals = [];
     state.workspace.latestQuery = null;
@@ -1009,6 +1118,7 @@ function projectWorkspace(snapshot) {
   } else {
     state.workspace.stateRevision = snapshot.state_revision || 0;
     state.workspace.buddies = snapshot.buddies || [];
+    state.workspace.agents = snapshot.agents || [];
     if (state.workspace.buddies.length && !state.workspace.buddyId) {
       state.workspace.buddyId = state.workspace.buddies[0].buddy_id;
     }
@@ -1026,6 +1136,7 @@ function projectWorkspace(snapshot) {
     const devices = snapshot.devices || [];
     const bindings = snapshot.bindings || [];
     const agentMachines = snapshot.agent_machines || [];
+    state.workspace.agentMachines = agentMachines;
     const latestHeartbeats = snapshot.latest_heartbeats || {};
     const desiredStates = snapshot.desired_states || {};
     const deviceEvents = snapshot.device_events || [];
