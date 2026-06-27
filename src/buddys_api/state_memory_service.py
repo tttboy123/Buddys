@@ -39,6 +39,7 @@ from buddys_api.state_memory_models import (
     StateMemoryProposalApplyResult,
     StateMemoryQueryAnswer,
     StateMemoryItem,
+    StateMemoryRecipe,
 )
 from buddys_api.state_memory_store import StateMemoryStore
 from buddys_api.sync_store import SyncStore
@@ -302,7 +303,12 @@ class StateMemoryService:
             try:
                 understanding = provider.understand_state_memory_query(question=question)
                 self._ensure_actual_capture_capacity(user_id=user_id, usage=understanding.usage)
-                answer = self._build_answer_from_understanding(understanding=understanding, items=items)
+                answer = self._build_answer_from_understanding(
+                    user_id=user_id,
+                    buddy_id=buddy_id,
+                    understanding=understanding,
+                    items=items,
+                )
             except StateMemoryProviderError as exc:
                 self._record_provider_failure(
                     user_id=user_id,
@@ -333,9 +339,18 @@ class StateMemoryService:
             understanding = None
             recipe_name, required_items = _match_recipe_question(question)
             if recipe_name is not None:
+                recipe = self.store.get_recipe_by_name(
+                    user_id=user_id,
+                    buddy_id=buddy_id,
+                    recipe_name=recipe_name,
+                )
                 answer = _build_missing_for_recipe_answer(
-                    subject_name=recipe_name,
-                    required_items=list(required_items),
+                    subject_name=recipe.name if recipe is not None else recipe_name,
+                    required_items=(
+                        [ingredient.name for ingredient in recipe.ingredients]
+                        if recipe is not None
+                        else list(required_items)
+                    ),
                     items=items,
                 )
             else:
@@ -674,16 +689,26 @@ class StateMemoryService:
     def _build_answer_from_understanding(
         self,
         *,
+        user_id: str,
+        buddy_id: str,
         understanding: StateMemoryQueryUnderstanding,
         items: list[StateMemoryItem],
     ) -> StateMemoryQueryAnswer:
         if understanding.answer_type == "missing_for_recipe":
             subject_name = (understanding.subject_name or "").strip()
-            if not subject_name or not understanding.required_items:
+            if not subject_name:
+                raise StateMemoryProviderError("model_response_invalid")
+            recipe = self.store.get_recipe_by_name(
+                user_id=user_id,
+                buddy_id=buddy_id,
+                recipe_name=subject_name,
+            )
+            required_items = _recipe_required_items(recipe=recipe, fallback_required_items=understanding.required_items)
+            if not required_items:
                 raise StateMemoryProviderError("model_response_invalid")
             return _build_missing_for_recipe_answer(
                 subject_name=subject_name,
-                required_items=understanding.required_items,
+                required_items=required_items,
                 items=items,
             )
         if understanding.answer_type == "have_item":
@@ -828,6 +853,16 @@ def _build_missing_for_recipe_answer(
     )
 
 
+def _recipe_required_items(
+    *,
+    recipe: StateMemoryRecipe | None,
+    fallback_required_items: list[str] | tuple[str, ...],
+) -> list[str]:
+    if recipe is not None:
+        return [ingredient.name for ingredient in recipe.ingredients]
+    return [item for item in fallback_required_items if str(item).strip()]
+
+
 def _evidence_item(item: StateMemoryItem) -> StateMemoryEvidenceItem:
     return StateMemoryEvidenceItem(
         item_id=item.item_id,
@@ -930,6 +965,8 @@ def _requested_name_forms(item_name: str) -> set[str]:
 
 
 def _match_recipe_question(question: str) -> tuple[str | None, tuple[str, ...]]:
+    if not any(marker in question for marker in ("做", "缺", "材料")):
+        return None, ()
     for recipe_name, required_items in _RECIPE_REQUIREMENTS.items():
         if recipe_name in question:
             return recipe_name, required_items

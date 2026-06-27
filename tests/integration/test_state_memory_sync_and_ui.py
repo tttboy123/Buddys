@@ -68,6 +68,7 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
     assert other_snapshot["state_memory"] == {
         "items_by_buddy": {},
         "pending_proposals_by_buddy": {},
+        "recipes_by_buddy": {},
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
@@ -76,6 +77,7 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
     assert unauth_snapshot["state_memory"] == {
         "items_by_buddy": {},
         "pending_proposals_by_buddy": {},
+        "recipes_by_buddy": {},
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
@@ -225,6 +227,7 @@ def test_sync_snapshot_projects_photo_evidence_details_for_auth_workspace(tmp_pa
     recent_activity = snapshot["state_memory"]["recent_activity_by_buddy"][buddy["buddy_id"]]
 
     assert latest_query["summary"] == "还有牛奶。"
+    assert latest_query["question"] == "有牛奶吗"
     assert latest_query["evidence_item_ids"]
     assert latest_query["evidence_items"][0]["name"] == "牛奶"
     assert latest_query["evidence_items"][0]["source"] == "photo"
@@ -235,6 +238,36 @@ def test_sync_snapshot_projects_photo_evidence_details_for_auth_workspace(tmp_pa
     assert any(activity["kind"] == "query_answered" for activity in recent_activity)
     assert "api_key" not in str(recent_activity).lower()
     assert "capabilities" not in str(recent_activity).lower()
+
+
+def test_sync_snapshot_projects_saved_recipes_for_auth_workspace_only(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "recipe-sync-owner@example.com")
+    other_token = register(client, "recipe-sync-other@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    create_recipe = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "番茄炒蛋", "ingredients": ["鸡蛋", "番茄", "盐"]},
+    )
+    assert create_recipe.status_code == 201
+
+    owner_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {owner_token}"}).json()
+    other_snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {other_token}"}).json()
+    unauth_snapshot = client.get("/sync/snapshot").json()
+
+    buddy_id = buddy["buddy_id"]
+    owner_recipes = owner_snapshot["state_memory"]["recipes_by_buddy"][buddy_id]
+    assert [recipe["name"] for recipe in owner_recipes] == ["番茄炒蛋"]
+    assert [ingredient["name"] for ingredient in owner_recipes[0]["ingredients"]] == ["鸡蛋", "番茄", "盐"]
+    assert other_snapshot["state_memory"]["recipes_by_buddy"] == {}
+    assert unauth_snapshot["state_memory"]["recipes_by_buddy"] == {}
 
 
 def test_sync_snapshot_uses_recent_consumption_history_for_hint_and_summary(tmp_path) -> None:

@@ -77,6 +77,40 @@ class StateMemoryHistoryEntry(BaseModel):
     created_at: str = Field(default_factory=now_iso)
 
 
+class StateMemoryRecipeIngredient(BaseModel):
+    name: NonEmptyStr
+    normalized_name: NonEmptyStr
+
+
+class StateMemoryRecipe(BaseModel):
+    schema_version: Literal["state_memory_recipe.v1"] = "state_memory_recipe.v1"
+    recipe_id: NonEmptyStr
+    user_id: NonEmptyStr
+    buddy_id: NonEmptyStr
+    name: NonEmptyStr
+    normalized_name: NonEmptyStr
+    ingredients: list[StateMemoryRecipeIngredient] = Field(default_factory=list, min_length=1)
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class StateMemoryRecipeCreateRequest(BaseModel):
+    name: NonEmptyStr
+    ingredients: list[str] = Field(default_factory=list, min_length=1)
+
+    @model_validator(mode="after")
+    def normalize_recipe_fields(self) -> "StateMemoryRecipeCreateRequest":
+        normalized_name = _normalize_memory_text(self.name)
+        ingredient_names = _normalize_recipe_ingredient_names(self.ingredients)
+        if not normalized_name:
+            raise ValueError("recipe_name_required")
+        if not ingredient_names:
+            raise ValueError("recipe_ingredients_required")
+        self.name = normalized_name
+        self.ingredients = ingredient_names
+        return self
+
+
 class StateMemoryCaptureRequest(BaseModel):
     content: OptionalCaptureContentStr | None = None
     image_base64: str | None = None
@@ -134,3 +168,22 @@ class StateMemoryQueryAnswer(BaseModel):
     missing_items: list[NonEmptyStr] = Field(default_factory=list)
     has_item: bool | None = None
     trace_id: NonEmptyStr
+
+
+def _normalize_memory_text(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
+def _normalize_recipe_ingredient_names(ingredients: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for ingredient in ingredients:
+        name = _normalize_memory_text(str(ingredient))
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(name)
+    return normalized

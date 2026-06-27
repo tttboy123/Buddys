@@ -357,6 +357,22 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_state_memory_pending_owner
             ON state_memory_pending_proposals(user_id, buddy_id, status, created_at);
 
+        CREATE TABLE IF NOT EXISTS state_memory_recipes (
+            recipe_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            normalized_name TEXT NOT NULL,
+            ingredients_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            FOREIGN KEY (buddy_id) REFERENCES buddies(buddy_id)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_state_memory_recipes_owner_name
+            ON state_memory_recipes(user_id, buddy_id, normalized_name);
+
         CREATE TABLE IF NOT EXISTS engagement_events (
             event_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,

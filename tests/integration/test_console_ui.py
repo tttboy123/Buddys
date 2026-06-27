@@ -117,6 +117,11 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert 'id="proposalReviewList"' in html
     assert 'id="proposalCorrectionInput"' in html
     assert 'id="submitCorrectionButton"' in html
+    assert 'id="recipeShelfPanel"' in html
+    assert 'id="recipeList"' in html
+    assert 'id="recipeNameInput"' in html
+    assert 'id="recipeIngredientsInput"' in html
+    assert 'id="createRecipeButton"' in html
     assert "Why this answer / details" in html
 
 
@@ -201,6 +206,25 @@ def test_console_assets_drive_primary_state_memory_flow_and_details_drawer() -> 
     assert "handlePhotoSelected" in script
     assert "submitPhotoCapture" in script
     assert "submitVoiceTranscript" in script
+    assert "renderRecipeShelf" in script
+    assert "submitRecipe" in script
+    assert "deleteRecipe" in script
+
+
+def test_console_assets_project_workspace_maps_recipe_shelf_snapshot_and_reset_state() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+    clear_session_body = extract_function_body(script, "clearSession")
+    render_recipe_shelf_body = extract_function_body(script, "renderRecipeShelf")
+
+    assert "recipes_by_buddy" in project_workspace_body
+    assert 'state.workspace.recipes = buddyId ? stateMemory.recipes_by_buddy?.[buddyId] || [] : [];' in project_workspace_body
+    assert "state.workspace.recipes = [];" in clear_session_body
+    assert "state.workspace.recipes.length" in render_recipe_shelf_body
+    assert "recipeShelfStatus" in render_recipe_shelf_body
+    assert "deleteRecipe(recipe.recipe_id)" in render_recipe_shelf_body
 
 
 def test_console_assets_project_safe_recent_activity_for_transparency_view() -> None:

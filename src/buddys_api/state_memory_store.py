@@ -11,6 +11,8 @@ from buddys_api.state_memory_models import (
     StateMemoryItem,
     StateMemoryProposalApplyResult,
     StateMemoryPendingProposal,
+    StateMemoryRecipe,
+    StateMemoryRecipeIngredient,
 )
 
 RECENT_CONSUMPTION_WINDOW = timedelta(days=3)
@@ -165,6 +167,89 @@ class StateMemoryStore:
         with self.connection:
             self._insert_proposal_locked(proposal)
         return proposal
+
+    def create_recipe(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        name: str,
+        ingredients: list[str],
+    ) -> StateMemoryRecipe:
+        timestamp = now_iso()
+        recipe = StateMemoryRecipe(
+            recipe_id=new_id("state_recipe"),
+            user_id=user_id,
+            buddy_id=buddy_id,
+            name=" ".join(name.strip().split()),
+            normalized_name=_normalize_item_name(name),
+            ingredients=_recipe_ingredients(ingredients),
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        try:
+            with self.connection:
+                self._insert_recipe_locked(recipe)
+        except sqlite3.IntegrityError as exc:
+            raise ValueError("recipe_already_exists") from exc
+        return recipe
+
+    def list_recipes(self, *, user_id: str, buddy_id: str) -> list[StateMemoryRecipe]:
+        rows = self.connection.execute(
+            """
+            SELECT recipe_id, user_id, buddy_id, name, normalized_name, ingredients_json, created_at, updated_at
+            FROM state_memory_recipes
+            WHERE user_id = ? AND buddy_id = ?
+            ORDER BY normalized_name, recipe_id
+            """,
+            (user_id, buddy_id),
+        ).fetchall()
+        return [_recipe_from_row(row) for row in rows]
+
+    def delete_recipe(self, *, user_id: str, buddy_id: str, recipe_id: str) -> None:
+        with self.connection:
+            cursor = self.connection.execute(
+                """
+                DELETE FROM state_memory_recipes
+                WHERE recipe_id = ? AND user_id = ? AND buddy_id = ?
+                """,
+                (recipe_id, user_id, buddy_id),
+            )
+        if cursor.rowcount != 1:
+            raise KeyError(f"recipe not found: {recipe_id}")
+
+    def get_recipe_by_name(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        recipe_name: str,
+    ) -> StateMemoryRecipe | None:
+        row = self.connection.execute(
+            """
+            SELECT recipe_id, user_id, buddy_id, name, normalized_name, ingredients_json, created_at, updated_at
+            FROM state_memory_recipes
+            WHERE user_id = ? AND buddy_id = ? AND normalized_name = ?
+            LIMIT 1
+            """,
+            (user_id, buddy_id, _normalize_item_name(recipe_name)),
+        ).fetchone()
+        if row is None:
+            return None
+        return _recipe_from_row(row)
+
+    def find_recipe_for_question(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        question: str,
+    ) -> StateMemoryRecipe | None:
+        normalized_question = _normalize_item_name(question)
+        for recipe in self.list_recipes(user_id=user_id, buddy_id=buddy_id):
+            if recipe.normalized_name in normalized_question:
+                return recipe
+        return None
 
     def list_pending_proposals(self, *, user_id: str, buddy_id: str) -> list[StateMemoryPendingProposal]:
         rows = self.connection.execute(
@@ -491,6 +576,26 @@ class StateMemoryStore:
             ),
         )
 
+    def _insert_recipe_locked(self, recipe: StateMemoryRecipe) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO state_memory_recipes (
+                recipe_id, user_id, buddy_id, name, normalized_name, ingredients_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                recipe.recipe_id,
+                recipe.user_id,
+                recipe.buddy_id,
+                recipe.name,
+                recipe.normalized_name,
+                _dump_recipe_ingredients(recipe.ingredients),
+                recipe.created_at,
+                recipe.updated_at,
+            ),
+        )
+
     def _update_proposal_locked(
         self,
         proposal: StateMemoryPendingProposal,
@@ -585,6 +690,22 @@ def _proposal_from_row(row: sqlite3.Row) -> StateMemoryPendingProposal:
     )
 
 
+def _recipe_from_row(row: sqlite3.Row) -> StateMemoryRecipe:
+    return StateMemoryRecipe(
+        recipe_id=row["recipe_id"],
+        user_id=row["user_id"],
+        buddy_id=row["buddy_id"],
+        name=row["name"],
+        normalized_name=row["normalized_name"],
+        ingredients=[
+            StateMemoryRecipeIngredient.model_validate(ingredient)
+            for ingredient in json.loads(row["ingredients_json"])
+        ],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 def _dump_deltas(deltas: list[StateMemoryDelta]) -> str:
     return json.dumps([delta.model_dump(mode="json") for delta in deltas], ensure_ascii=False, sort_keys=True)
 
@@ -593,8 +714,29 @@ def _dump_unrecognized(unrecognized: list[str]) -> str:
     return json.dumps(unrecognized, ensure_ascii=False, sort_keys=True)
 
 
+def _dump_recipe_ingredients(ingredients: list[StateMemoryRecipeIngredient]) -> str:
+    return json.dumps([ingredient.model_dump(mode="json") for ingredient in ingredients], ensure_ascii=False, sort_keys=True)
+
+
 def _normalize_item_name(name: str) -> str:
     return " ".join(name.strip().lower().split())
+
+
+def _recipe_ingredients(ingredients: list[str]) -> list[StateMemoryRecipeIngredient]:
+    normalized: list[StateMemoryRecipeIngredient] = []
+    seen: set[str] = set()
+    for ingredient in ingredients:
+        name = " ".join(str(ingredient).strip().split())
+        if not name:
+            continue
+        normalized_name = _normalize_item_name(name)
+        if normalized_name in seen:
+            continue
+        seen.add(normalized_name)
+        normalized.append(StateMemoryRecipeIngredient(name=name, normalized_name=normalized_name))
+    if not normalized:
+        raise ValueError("recipe_ingredients_required")
+    return normalized
 
 
 def _quantity_after_for_new_item(delta: StateMemoryDelta) -> float | None:

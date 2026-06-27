@@ -4,6 +4,7 @@ const UNRECOGNIZED_COPY = "I heard this but could not structure it yet";
 const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
 const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
+const DEFAULT_RECIPE_EMPTY = "No saved recipes yet.";
 const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
 
 const state = {
@@ -18,6 +19,7 @@ const state = {
     agentMachines: [],
     confirmedItems: [],
     pendingProposals: [],
+    recipes: [],
     latestQuery: null,
     recentActivity: [],
     proactiveHint: null,
@@ -190,6 +192,7 @@ function clearSession() {
   state.workspace.agentMachines = [];
   state.workspace.confirmedItems = [];
   state.workspace.pendingProposals = [];
+  state.workspace.recipes = [];
   state.workspace.latestQuery = null;
   state.workspace.recentActivity = [];
   state.workspace.proactiveHint = null;
@@ -222,6 +225,8 @@ function clearSession() {
   $("authInviteCodeInput").value = "";
   $("agentManagementActionStatus").textContent = "No agent registration yet.";
   $("deviceOwnerInstructionInput").value = "";
+  $("recipeNameInput").value = "";
+  $("recipeIngredientsInput").value = "";
   renderExperienceShell();
 }
 
@@ -243,6 +248,8 @@ function syncAuthControls() {
   const hasVoiceTranscript = Boolean(state.ui.voice.transcript.trim());
   const hasDeviceInstruction = Boolean($("deviceOwnerInstructionInput")?.value.trim());
   const hasAgentName = Boolean($("agentManagementNameInput")?.value.trim());
+  const hasRecipeName = Boolean($("recipeNameInput")?.value.trim());
+  const hasRecipeIngredients = Boolean($("recipeIngredientsInput")?.value.trim());
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
@@ -262,6 +269,9 @@ function syncAuthControls() {
   $("submitVoiceTranscriptButton").disabled = !hasBuddy || !hasVoiceTranscript;
   $("queryTextInput").disabled = !hasBuddy;
   $("querySubmitButton").disabled = !hasBuddy;
+  $("recipeNameInput").disabled = !hasBuddy;
+  $("recipeIngredientsInput").disabled = !hasBuddy;
+  $("createRecipeButton").disabled = !hasBuddy || !hasRecipeName || !hasRecipeIngredients;
   $("proposalCorrectionInput").disabled = !hasBuddy || !selectedProposal();
   $("submitCorrectionButton").disabled = !hasBuddy || !selectedProposal();
   $("deviceOwnerInstructionInput").disabled = !hasBuddy || !hasDevice;
@@ -583,6 +593,62 @@ function renderLatestAnswer() {
     (item) =>
       `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status} · ${item.source} · ${item.last_seen_at}`,
   );
+}
+
+function formatRecipe(recipe) {
+  return `${recipe.name} · ${(recipe.ingredients || []).map((ingredient) => ingredient.name).join(" / ")}`;
+}
+
+function renderRecipeShelf() {
+  const list = $("recipeList");
+  list.replaceChildren();
+
+  if (!isAuthenticated()) {
+    $("recipeShelfStatus").textContent = "Login to save recipes for this Buddy.";
+  } else if (!state.workspace.buddyId) {
+    $("recipeShelfStatus").textContent = "Create your first Buddy before saving recipes.";
+  } else {
+    $("recipeShelfStatus").textContent = state.workspace.recipes.length
+      ? "Saved recipes are used before fallback recipe defaults for this Buddy."
+      : "Save one recipe to make missing-for-recipe answers personal to this Buddy.";
+  }
+
+  if (!state.workspace.recipes.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = DEFAULT_RECIPE_EMPTY;
+    list.appendChild(emptyItem);
+    syncAuthControls();
+    return;
+  }
+
+  state.workspace.recipes.forEach((recipe) => {
+    const item = document.createElement("li");
+    item.className = "proposal-card";
+
+    const title = document.createElement("strong");
+    title.textContent = recipe.name;
+    item.appendChild(title);
+
+    const meta = document.createElement("p");
+    meta.className = "support-copy";
+    meta.textContent = (recipe.ingredients || []).map((ingredient) => ingredient.name).join(" / ");
+    item.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "button-row";
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "ghost-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.addEventListener("click", () => deleteRecipe(recipe.recipe_id));
+
+    actions.appendChild(deleteButton);
+    item.appendChild(actions);
+    list.appendChild(item);
+  });
+
+  syncAuthControls();
 }
 
 function formatRecentActivity(activity) {
@@ -1208,6 +1274,7 @@ function renderExperienceShell() {
   renderCaptureComposer();
   renderProposalInbox();
   renderLatestAnswer();
+  renderRecipeShelf();
   renderAgentManagement();
   renderRecentActivity();
   renderCostGovernancePanel();
@@ -1367,6 +1434,7 @@ function projectWorkspace(snapshot) {
     state.workspace.agentMachines = [];
     state.workspace.confirmedItems = [];
     state.workspace.pendingProposals = [];
+    state.workspace.recipes = [];
     state.workspace.latestQuery = null;
     state.workspace.recentActivity = [];
     state.workspace.proactiveHint = null;
@@ -1397,6 +1465,7 @@ function projectWorkspace(snapshot) {
     const stateMemory = snapshot.state_memory || {};
     state.workspace.confirmedItems = buddyId ? stateMemory.items_by_buddy?.[buddyId] || [] : [];
     state.workspace.pendingProposals = buddyId ? stateMemory.pending_proposals_by_buddy?.[buddyId] || [] : [];
+    state.workspace.recipes = buddyId ? stateMemory.recipes_by_buddy?.[buddyId] || [] : [];
     state.workspace.latestQuery = buddyId ? stateMemory.latest_query_by_buddy?.[buddyId] || null : null;
     state.workspace.recentActivity = buddyId ? stateMemory.recent_activity_by_buddy?.[buddyId] || [] : [];
     state.workspace.proactiveHint = buddyId ? stateMemory.proactive_hint_by_buddy?.[buddyId] || null : null;
@@ -1648,6 +1717,53 @@ async function submitQuery() {
   }
 }
 
+async function submitRecipe() {
+  if (!state.workspace.buddyId) {
+    setWorkspaceStatus("Create or select a Buddy before saving a recipe.");
+    return;
+  }
+  const name = $("recipeNameInput").value.trim();
+  const ingredients = $("recipeIngredientsInput").value
+    .split(/[，,]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!name || !ingredients.length) {
+    setWorkspaceStatus("Recipe name and ingredients are required.");
+    syncAuthControls();
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/recipes`, {
+      method: "POST",
+      body: JSON.stringify({ name, ingredients }),
+    });
+    $("recipeNameInput").value = "";
+    $("recipeIngredientsInput").value = "";
+    setWorkspaceStatus(`Saved recipe: ${formatRecipe(response.recipe)}`);
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    setWorkspaceStatus(`Recipe save failed: ${error.message}`);
+  }
+}
+
+async function deleteRecipe(recipeId) {
+  try {
+    await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/recipes/${recipeId}`, {
+      method: "DELETE",
+    });
+    setWorkspaceStatus("Recipe deleted.");
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    setWorkspaceStatus(`Recipe delete failed: ${error.message}`);
+  }
+}
+
 async function confirmProposal(proposalId) {
   try {
     await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/proposals/${proposalId}/confirm`, {
@@ -1745,6 +1861,9 @@ document.addEventListener("DOMContentLoaded", () => {
     renderCaptureComposer();
   });
   $("querySubmitButton").addEventListener("click", submitQuery);
+  $("recipeNameInput").addEventListener("input", syncAuthControls);
+  $("recipeIngredientsInput").addEventListener("input", syncAuthControls);
+  $("createRecipeButton").addEventListener("click", submitRecipe);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
   $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);
   $("deviceOwnerInstructionInput").addEventListener("input", () => {

@@ -1,3 +1,4 @@
+import pytest
 from pydantic import ValidationError
 
 from buddys_api.state_memory_models import (
@@ -7,6 +8,9 @@ from buddys_api.state_memory_models import (
     StateMemoryHistoryEntry,
     StateMemoryItem,
     StateMemoryPendingProposal,
+    StateMemoryRecipe,
+    StateMemoryRecipeCreateRequest,
+    StateMemoryRecipeIngredient,
     StateMemoryQueryAnswer,
     StateMemoryQueryRequest,
 )
@@ -138,3 +142,46 @@ def test_state_memory_models_reject_blank_names_and_unknown_sources() -> None:
         except ValidationError:
             continue
         raise AssertionError("expected model validation to fail")
+
+
+def test_state_memory_recipe_models_export_normalized_ingredient_fields() -> None:
+    recipe = StateMemoryRecipe(
+        recipe_id="recipe_red_braised_pork",
+        user_id="user_1",
+        buddy_id="buddy_1",
+        name="红烧肉",
+        normalized_name="红烧肉",
+        ingredients=[
+            StateMemoryRecipeIngredient(name="五花肉", normalized_name="五花肉"),
+            StateMemoryRecipeIngredient(name="老抽", normalized_name="老抽"),
+        ],
+        created_at="2026-06-28T10:00:00+08:00",
+        updated_at="2026-06-28T10:00:00+08:00",
+    )
+    create_request = StateMemoryRecipeCreateRequest(
+        name="  红烧肉  ",
+        ingredients=[" 五花肉 ", "老抽", "五花肉", " 冰糖 "],
+    )
+
+    assert recipe.model_dump()["schema_version"] == "state_memory_recipe.v1"
+    assert [ingredient["name"] for ingredient in recipe.model_dump()["ingredients"]] == ["五花肉", "老抽"]
+    assert create_request.name == "红烧肉"
+    assert create_request.ingredients == ["五花肉", "老抽", "冰糖"]
+
+
+def test_state_memory_recipe_models_reject_blank_recipe_names_and_ingredients() -> None:
+    for factory in [
+        lambda: StateMemoryRecipeIngredient(name="   ", normalized_name="blank"),
+        lambda: StateMemoryRecipe(
+            recipe_id="recipe_1",
+            user_id="user_1",
+            buddy_id="buddy_1",
+            name="红烧肉",
+            normalized_name="红烧肉",
+            ingredients=[],
+        ),
+        lambda: StateMemoryRecipeCreateRequest(name="   ", ingredients=["五花肉"]),
+        lambda: StateMemoryRecipeCreateRequest(name="红烧肉", ingredients=["   "]),
+    ]:
+        with pytest.raises(ValidationError):
+            factory()

@@ -89,6 +89,39 @@ def test_store_persists_pending_proposals_and_scopes_queries_to_owner() -> None:
     assert other_history == []
 
 
+def test_store_persists_recipe_crud_with_owner_scope_and_normalized_deduped_ingredients() -> None:
+    store, owner_id, other_id, buddy_id, _ = make_store()
+
+    recipe = store.create_recipe(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        name=" 红烧肉 ",
+        ingredients=[" 五花肉 ", "老抽", "五花肉", " 冰糖 "],
+    )
+
+    assert recipe.name == "红烧肉"
+    assert recipe.normalized_name == "红烧肉"
+    assert [ingredient.name for ingredient in recipe.ingredients] == ["五花肉", "老抽", "冰糖"]
+    assert [ingredient.normalized_name for ingredient in recipe.ingredients] == ["五花肉", "老抽", "冰糖"]
+
+    owner_recipes = store.list_recipes(user_id=owner_id, buddy_id=buddy_id)
+    other_recipes = store.list_recipes(user_id=other_id, buddy_id=buddy_id)
+    fetched = store.get_recipe_by_name(user_id=owner_id, buddy_id=buddy_id, recipe_name="红烧肉")
+    cross_user = store.get_recipe_by_name(user_id=other_id, buddy_id=buddy_id, recipe_name="红烧肉")
+
+    assert [stored.recipe_id for stored in owner_recipes] == [recipe.recipe_id]
+    assert other_recipes == []
+    assert fetched is not None
+    assert fetched.recipe_id == recipe.recipe_id
+    assert cross_user is None
+
+    store.delete_recipe(user_id=owner_id, buddy_id=buddy_id, recipe_id=recipe.recipe_id)
+
+    assert store.list_recipes(user_id=owner_id, buddy_id=buddy_id) == []
+    with pytest.raises(KeyError):
+        store.delete_recipe(user_id=owner_id, buddy_id=buddy_id, recipe_id=recipe.recipe_id)
+
+
 def test_confirm_proposal_writes_items_and_history_only_after_explicit_apply() -> None:
     store, owner_id, _, buddy_id, _ = make_store()
 

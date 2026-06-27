@@ -342,15 +342,18 @@ def _state_memory_projection(
 
     items_by_buddy_models: dict[str, list[Any]] = {}
     pending_by_buddy_models: dict[str, list[Any]] = {}
+    recipes_by_buddy_models: dict[str, list[Any]] = {}
     history_by_buddy_models: dict[str, list[Any]] = {}
     summary_by_buddy: dict[str, dict[str, Any]] = {}
 
     for buddy in buddies:
         items = state_memory_store.list_items(user_id=user_id, buddy_id=buddy.buddy_id)
         pending = state_memory_store.list_pending_proposals(user_id=user_id, buddy_id=buddy.buddy_id)
+        recipes = state_memory_store.list_recipes(user_id=user_id, buddy_id=buddy.buddy_id)
         history = state_memory_store.list_history(user_id=user_id, buddy_id=buddy.buddy_id)
         items_by_buddy_models[buddy.buddy_id] = items
         pending_by_buddy_models[buddy.buddy_id] = pending
+        recipes_by_buddy_models[buddy.buddy_id] = recipes
         history_by_buddy_models[buddy.buddy_id] = history
         summary_by_buddy[buddy.buddy_id] = state_memory_store.summarize_buddy_state(
             user_id=user_id,
@@ -371,6 +374,11 @@ def _state_memory_projection(
             buddy_id: [_safe_dump(proposal) for proposal in proposals]
             for buddy_id, proposals in pending_by_buddy_models.items()
             if proposals
+        },
+        "recipes_by_buddy": {
+            buddy_id: [_safe_dump(recipe) for recipe in recipes]
+            for buddy_id, recipes in recipes_by_buddy_models.items()
+            if recipes
         },
         "summary_by_buddy": {
             buddy_id: summary
@@ -398,6 +406,7 @@ def _empty_state_memory_projection() -> dict[str, Any]:
     return {
         "items_by_buddy": {},
         "pending_proposals_by_buddy": {},
+        "recipes_by_buddy": {},
         "summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},

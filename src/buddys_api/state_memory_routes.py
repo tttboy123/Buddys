@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from buddys_api.auth_models import UserPublic
 from buddys_api.auth_routes import require_current_user
@@ -13,6 +13,7 @@ from buddys_api.state_memory_models import (
     StateMemoryProposalCorrectionRequest,
     StateMemoryQueryAnswer,
     StateMemoryQueryRequest,
+    StateMemoryRecipeCreateRequest,
 )
 from buddys_api.state_memory_service import StateMemoryService
 from buddys_api.state_memory_store import StateMemoryStore
@@ -66,6 +67,60 @@ def list_state_memory_pending_proposals(
             buddy_id=buddy_id,
         )
     }
+
+
+@router.get("/recipes")
+def list_state_memory_recipes(
+    buddy_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, list[object]]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    return {
+        "recipes": _state_memory_store(fastapi_request).list_recipes(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+        )
+    }
+
+
+@router.post("/recipes", status_code=201)
+def create_state_memory_recipe(
+    buddy_id: str,
+    request: StateMemoryRecipeCreateRequest,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        recipe = _state_memory_store(fastapi_request).create_recipe(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            name=request.name,
+            ingredients=request.ingredients,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
+    return {"recipe": recipe}
+
+
+@router.delete("/recipes/{recipe_id}", status_code=204)
+def delete_state_memory_recipe(
+    buddy_id: str,
+    recipe_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> Response:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    try:
+        _state_memory_store(fastapi_request).delete_recipe(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            recipe_id=recipe_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "recipe_not_found"}) from exc
+    return Response(status_code=204)
 
 
 @router.post("/query")

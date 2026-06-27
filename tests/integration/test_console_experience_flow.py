@@ -54,6 +54,55 @@ def test_console_experience_flow_contract_matches_auth_state_memory_path(tmp_pat
     assert "proactive_hint_by_buddy" in state_memory
 
 
+def test_console_experience_flow_saved_recipe_changes_missing_for_recipe_answer_and_snapshot(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "recipe-console@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    for name in ("五花肉", "老抽"):
+        app.state.state_memory_store.create_item(
+            user_id=buddy["user_id"],
+            buddy_id=buddy["buddy_id"],
+            name=name,
+            category="ingredient",
+            quantity=1,
+            unit="份",
+            source="manual",
+            confidence=1.0,
+        )
+
+    create_recipe = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "红烧肉", "ingredients": ["五花肉", "老抽"]},
+    )
+    assert create_recipe.status_code == 201
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "能做红烧肉吗"},
+    )
+    assert query.status_code == 200
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    state_memory = snapshot["state_memory"]
+    buddy_id = buddy["buddy_id"]
+
+    assert state_memory["recipes_by_buddy"][buddy_id][0]["name"] == "红烧肉"
+    assert [ingredient["name"] for ingredient in state_memory["recipes_by_buddy"][buddy_id][0]["ingredients"]] == [
+        "五花肉",
+        "老抽",
+    ]
+    assert state_memory["latest_query_by_buddy"][buddy_id]["summary"] == "做红烧肉的材料目前齐了。"
+    assert state_memory["latest_query_by_buddy"][buddy_id]["missing_items"] == []
+
+
 def test_console_experience_flow_supports_login_photo_capture_and_traceable_hint(
     tmp_path,
     monkeypatch,

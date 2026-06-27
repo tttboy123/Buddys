@@ -1489,6 +1489,248 @@ def test_state_memory_query_returns_evidence_and_missing_items_for_inventory_and
     assert missing_for_recipe.json()["trace_id"].startswith("trace_")
 
 
+def test_state_memory_saved_recipe_does_not_hijack_have_item_query_for_recipe_name(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "recipe-have-item@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    create_recipe = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "红烧肉", "ingredients": ["五花肉", "老抽"]},
+    )
+    assert create_recipe.status_code == 201
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有红烧肉吗"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer_type"] == "have_item"
+    assert response.json()["subject_name"] == "红烧肉"
+    assert response.json()["has_item"] is False
+    assert response.json()["missing_items"] == ["红烧肉"]
+    assert response.json()["evidence_items"] == []
+
+
+def test_state_memory_recipe_api_requires_auth_and_scopes_recipe_crud_to_buddy_owner(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    owner_token = register(client, "recipe-owner@example.com")
+    other_token = register(client, "recipe-other@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    unauth_create = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        json={"name": "番茄炒蛋", "ingredients": ["鸡蛋", "番茄", "盐"]},
+    )
+    owner_create = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": " 番茄炒蛋 ", "ingredients": [" 鸡蛋 ", "番茄", "鸡蛋", " 盐 "]},
+    )
+    owner_list = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    cross_user_list = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert unauth_create.status_code == 401
+    assert unauth_create.json() == {"detail": {"code": "missing_bearer_token"}}
+    assert owner_create.status_code == 201
+    recipe = owner_create.json()["recipe"]
+    assert recipe["name"] == "番茄炒蛋"
+    assert [ingredient["name"] for ingredient in recipe["ingredients"]] == ["鸡蛋", "番茄", "盐"]
+    assert owner_list.status_code == 200
+    assert [entry["recipe_id"] for entry in owner_list.json()["recipes"]] == [recipe["recipe_id"]]
+    assert cross_user_list.status_code == 404
+    assert cross_user_list.json() == {"detail": {"code": "buddy_not_found"}}
+
+    delete_response = client.delete(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes/{recipe['recipe_id']}",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    owner_list_after_delete = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+
+    assert delete_response.status_code == 204
+    assert owner_list_after_delete.json() == {"recipes": []}
+
+
+def test_state_memory_recipe_api_rejects_blank_recipe_payload(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "recipe-invalid@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "红烧肉", "ingredients": ["   "]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_state_memory_query_uses_saved_recipe_before_hardcoded_fallback(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "recipe-fallback@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    store = app.state.state_memory_store
+    store.create_recipe(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="红烧肉",
+        ingredients=["五花肉", "老抽"],
+    )
+    store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="五花肉",
+        category="ingredient",
+        quantity=1,
+        unit="份",
+        source="manual",
+        confidence=1.0,
+    )
+    store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="老抽",
+        category="ingredient",
+        quantity=1,
+        unit="瓶",
+        source="manual",
+        confidence=1.0,
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "能做红烧肉吗"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_type"] == "missing_for_recipe"
+    assert body["subject_name"] == "红烧肉"
+    assert body["missing_items"] == []
+    assert [item["name"] for item in body["evidence_items"]] == ["五花肉", "老抽"]
+    assert body["summary"] == "做红烧肉的材料目前齐了。"
+
+
+def test_state_memory_real_query_saved_recipe_overrides_provider_required_items(tmp_path, monkeypatch) -> None:
+    import httpx
+    import json
+
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "recipe-provider@example.com")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-provider-test")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    provider_response = client.post(
+        "/providers",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "provider_id": "minimax-openai",
+            "display_name": "MiniMax OpenAI Compatible",
+            "provider_type": "openai_compatible",
+            "base_url": "https://api.minimaxi.com/v1",
+            "api_key_env_var": "OPENAI_API_KEY",
+            "default_model": "MiniMax-M3",
+        },
+    )
+    assert provider_response.status_code == 200
+    app.state.state_memory_store.create_recipe(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="西红柿炒蛋",
+        ingredients=["鸡蛋", "西红柿", "盐"],
+    )
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=6,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "answer_type": "missing_for_recipe",
+                                    "subject_name": "西红柿炒蛋",
+                                    "required_items": ["鸡蛋", "蒜"],
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 13, "completion_tokens": 15},
+            },
+        )
+
+    app.state.state_memory_service.provider_factory = lambda config: OpenAICompatibleProvider(
+        provider_id=config.provider_id,
+        base_url=config.base_url or "https://api.minimaxi.com/v1",
+        api_key_env_var=config.api_key_env_var or "OPENAI_API_KEY",
+        model=config.default_model,
+        transport=httpx.MockTransport(handler),
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "做西红柿炒蛋还缺什么"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_type"] == "missing_for_recipe"
+    assert body["subject_name"] == "西红柿炒蛋"
+    assert body["missing_items"] == ["西红柿", "盐"]
+    assert [item["name"] for item in body["evidence_items"]] == ["鸡蛋"]
+    assert body["summary"] == "做西红柿炒蛋还缺西红柿、盐。"
+
+
 def test_state_memory_query_have_item_with_unknown_quantity_is_honest(tmp_path) -> None:
     app = create_app(db_path=tmp_path / "buddys.sqlite3")
     client = TestClient(app)
