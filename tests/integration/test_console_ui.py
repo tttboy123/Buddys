@@ -146,8 +146,14 @@ def test_console_html_exposes_user_transparency_surfaces_without_operator_panels
     assert 'id="agentManagementActionStatus"' in html
     assert "Register agent" in html
     assert "Agent and machine workspace" in html
+    assert 'id="costGovernancePanel"' in html
+    assert 'id="costGovernanceTitle"' in html
+    assert 'id="costGovernanceStatus"' in html
+    assert 'id="planUsageList"' in html
+    assert 'id="planUsageBreakdownList"' in html
+    assert 'id="planGovernanceCostRow"' in html
     assert "Provider settings" not in html
-    assert "Cost governance" not in html
+    assert "Model usage detail" not in html
 
 
 def test_console_html_exposes_founder_metrics_containers() -> None:
@@ -201,6 +207,7 @@ def test_console_assets_project_safe_recent_activity_for_transparency_view() -> 
     client = make_client()
 
     script = client.get("/static/app.js").text
+    html = client.get("/console").text
     project_workspace_body = extract_function_body(script, "projectWorkspace")
     clear_session_body = extract_function_body(script, "clearSession")
     render_recent_activity_body = extract_function_body(script, "renderRecentActivity")
@@ -222,7 +229,8 @@ def test_console_assets_project_safe_recent_activity_for_transparency_view() -> 
     assert "snapshot.agent_machines" in project_workspace_body
     assert "state.workspace.agentMachines = agentMachines;" in project_workspace_body
     assert "providerSettingsPanel" not in script
-    assert "costGovernancePanel" not in script
+    assert "renderCostGovernancePanel" in script
+    assert "costGovernancePanel" in html
 
 
 def test_console_assets_project_workspace_maps_agents_and_renders_agent_management_panel() -> None:
@@ -593,6 +601,25 @@ def test_console_assets_keep_signed_out_workspace_auth_only_when_sync_snapshot_c
     assert "state.workspace.recentActivity = [];" in project_workspace_body
     assert "state.workspace.traces = [];" in project_workspace_body
     assert "state.workspace.costSummary = {};" in project_workspace_body
+    assert "state.workspace.planUsage = {};" in project_workspace_body
+
+
+def test_console_assets_project_workspace_maps_plan_usage_and_renders_cost_panel() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    html = client.get("/console").text
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+    render_cost_governance_body = extract_function_body(script, "renderCostGovernancePanel")
+
+    assert 'id="costGovernancePanel"' in html
+    assert 'id="costGovernanceStatus"' in html
+    assert 'id="planUsageList"' in html
+    assert "snapshot.plan_usage" in project_workspace_body
+    assert "state.workspace.planUsage = snapshot.plan_usage || {};" in project_workspace_body
+    assert "renderCostGovernancePanel" in script
+    assert "renderTextList(\"planUsageList\"" in render_cost_governance_body
+    assert "costGovernanceStatus" in render_cost_governance_body
 
 
 def test_console_assets_render_evidence_and_details_basis_for_current_answer() -> None:

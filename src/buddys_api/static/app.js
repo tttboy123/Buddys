@@ -24,6 +24,7 @@ const state = {
     summary: {},
     traces: [],
     costSummary: {},
+    planUsage: {},
     engagementMetrics: null,
     retentionSummary: null,
     founderMetricsVisible: false,
@@ -195,6 +196,7 @@ function clearSession() {
   state.workspace.summary = {};
   state.workspace.traces = [];
   state.workspace.costSummary = {};
+  state.workspace.planUsage = {};
   state.workspace.engagementMetrics = null;
   state.workspace.retentionSummary = null;
   state.workspace.founderMetricsVisible = false;
@@ -609,6 +611,69 @@ function renderRecentActivity() {
   renderTextList("buddyActivityList", activities, "No recent Buddy activity yet.", (activity) => {
     return formatRecentActivity(activity);
   });
+}
+
+function renderCostGovernancePanel() {
+  const planUsage = state.workspace.planUsage || {};
+  const planId = planUsage.plan_display_name || planUsage.plan_id || "unknown";
+  const usageMonth = planUsage.usage_month || "current";
+  const hardLimit = planUsage.hard_limit ? "enabled" : "disabled";
+  const usedTokens = Number(planUsage.used_tokens || 0);
+  const remainingTokens = planUsage.remaining_tokens === null || planUsage.remaining_tokens === undefined
+    ? null
+    : Number(planUsage.remaining_tokens);
+  const monthlyLimit = Number(planUsage.monthly_token_limit || 0);
+  const costSummary = state.workspace.costSummary || {};
+  const byProvider = planUsage.provider_usage || {};
+  const byModel = planUsage.model_usage || {};
+  const topProviderEntry = Object.entries(byProvider).sort((left, right) => right[1].total_tokens - left[1].total_tokens)[0];
+  const topModelEntry = Object.entries(byModel).sort((left, right) => right[1].total_tokens - left[1].total_tokens)[0];
+
+  const planLines = [];
+  const topProviderCopy = topProviderEntry
+    ? `${topProviderEntry[0]} · ${topProviderEntry[1].total_tokens || 0} tokens`
+    : "No provider usage yet.";
+  const topModelCopy = topModelEntry
+    ? `${topModelEntry[0]} · ${topModelEntry[1].total_tokens || 0} tokens`
+    : "No model usage yet.";
+
+  if (!isAuthenticated()) {
+    $("costGovernanceStatus").textContent = "Login to see token usage and cost summary.";
+    renderTextList("planUsageList", [], "Sign in to unlock usage transparency.", (line) => line);
+    renderTextList("planUsageBreakdownList", [], "Sign in to see provider/model usage detail.", (line) => line);
+    $("planGovernanceCostRow").textContent = "Cost snapshot unavailable.";
+    return;
+  }
+
+  if (!planUsage || !Object.keys(planUsage).length) {
+    $("costGovernanceStatus").textContent = "Usage summary is not available yet.";
+    renderTextList("planUsageList", [], "No plan usage snapshot yet.", (line) => line);
+    renderTextList("planUsageBreakdownList", [], "No usage breakdown yet.", (line) => line);
+    $("planGovernanceCostRow").textContent = "Cost snapshot unavailable.";
+    return;
+  }
+
+  planLines.push(`Plan: ${planId}`);
+  planLines.push(`Month: ${usageMonth}`);
+  planLines.push(`Used tokens: ${usedTokens}`);
+  planLines.push(`Monthly limit: ${monthlyLimit || 0}`);
+  planLines.push(
+    `Remaining tokens: ${remainingTokens === null ? "unlimited" : remainingTokens.toLocaleString("en-US")}`,
+  );
+  planLines.push(`Hard limit: ${hardLimit}`);
+  planLines.push(`Plan BYOK mode: ${planUsage.byok ? "on" : "off"}`);
+  if (planUsage.over_limit) {
+    planLines.push("Limit status: reached");
+  } else {
+    planLines.push("Limit status: in quota");
+  }
+
+  $("costGovernanceStatus").textContent = "Token and cost snapshot updated from server state.";
+  renderTextList("planUsageList", planLines, "Cost summary is empty.", (line) => line);
+  renderTextList("planUsageBreakdownList", [topProviderCopy, topModelCopy], "No usage breakdown yet.", (line) => line);
+  $("planGovernanceCostRow").textContent = `Estimated spend: ${money(costSummary.model_cost_usd + costSummary.tool_cost_usd + costSummary.log_cost_usd || 0)} / ${costEventCny(
+    costSummary,
+  ).toFixed(2)} CNY`;
 }
 
 function currentProactiveHint() {
@@ -1145,6 +1210,7 @@ function renderExperienceShell() {
   renderLatestAnswer();
   renderAgentManagement();
   renderRecentActivity();
+  renderCostGovernancePanel();
   renderProactiveMemoryCard();
   renderDetailsDrawer();
   renderFounderMetrics();
@@ -1307,6 +1373,7 @@ function projectWorkspace(snapshot) {
     state.workspace.summary = {};
     state.workspace.traces = [];
     state.workspace.costSummary = {};
+    state.workspace.planUsage = {};
     state.workspace.engagementMetrics = null;
     state.workspace.retentionSummary = null;
     state.workspace.founderMetricsVisible = false;
@@ -1336,6 +1403,7 @@ function projectWorkspace(snapshot) {
     state.workspace.summary = buddyId ? stateMemory.summary_by_buddy?.[buddyId] || {} : {};
     state.workspace.traces = snapshot.traces || [];
     state.workspace.costSummary = snapshot.cost_summary || {};
+    state.workspace.planUsage = snapshot.plan_usage || {};
     const devices = snapshot.devices || [];
     const bindings = snapshot.bindings || [];
     const agentMachines = snapshot.agent_machines || [];
