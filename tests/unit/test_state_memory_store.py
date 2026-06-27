@@ -326,10 +326,102 @@ def test_reject_and_correct_raise_when_proposal_is_no_longer_pending() -> None:
                     quantity=3,
                     unit="盒",
                     confidence=1.0,
-                    source="manual",
-                )
-            ],
-        )
+                source="manual",
+            )
+        ],
+    )
+
+
+def test_shopping_pass_store_dedupes_one_open_item_per_name_per_buddy() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    first = store.add_shopping_pass_item(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        name="牛奶",
+        source_kind="manual",
+        source_summary="typed by user",
+    )
+    duplicate = store.add_shopping_pass_item(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        name="  牛奶  ",
+        source_kind="proactive_hint",
+        source_summary="promoted current hint",
+    )
+    open_items = store.list_shopping_pass_items(user_id=owner_id, buddy_id=buddy_id)
+
+    assert duplicate.shopping_item_id == first.shopping_item_id
+    assert [(item.name, item.status, item.source_kind) for item in open_items] == [("牛奶", "open", "manual")]
+
+
+def test_shopping_pass_store_scopes_open_items_by_owner_and_buddy() -> None:
+    store, owner_id, other_id, owner_buddy_id, other_buddy_id = make_store()
+
+    owner_item = store.add_shopping_pass_item(
+        user_id=owner_id,
+        buddy_id=owner_buddy_id,
+        name="生抽",
+        source_kind="missing_for_recipe",
+        source_summary="latest query missing items",
+    )
+    other_buddy_item = store.add_shopping_pass_item(
+        user_id=owner_id,
+        buddy_id=other_buddy_id,
+        name="生抽",
+        source_kind="manual",
+        source_summary="other buddy",
+    )
+    other_user_item = store.add_shopping_pass_item(
+        user_id=other_id,
+        buddy_id=other_buddy_id,
+        name="生抽",
+        source_kind="manual",
+        source_summary="other user",
+    )
+
+    assert [item.shopping_item_id for item in store.list_shopping_pass_items(user_id=owner_id, buddy_id=owner_buddy_id)] == [
+        owner_item.shopping_item_id
+    ]
+    assert [item.shopping_item_id for item in store.list_shopping_pass_items(user_id=owner_id, buddy_id=other_buddy_id)] == [
+        other_buddy_item.shopping_item_id
+    ]
+    assert [item.shopping_item_id for item in store.list_shopping_pass_items(user_id=other_id, buddy_id=other_buddy_id)] == [
+        other_user_item.shopping_item_id
+    ]
+
+
+def test_shopping_pass_store_marks_item_done_and_allows_readd_after_resolution() -> None:
+    store, owner_id, _, buddy_id, _ = make_store()
+
+    first = store.add_shopping_pass_item(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        name="番茄",
+        source_kind="manual",
+        source_summary="typed by user",
+    )
+
+    done_item = store.mark_shopping_pass_item_done(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        shopping_item_id=first.shopping_item_id,
+    )
+    reopened = store.add_shopping_pass_item(
+        user_id=owner_id,
+        buddy_id=buddy_id,
+        name="番茄",
+        source_kind="proactive_hint",
+        source_summary="promoted after low stock hint",
+    )
+
+    assert done_item.status == "done"
+    assert [item.status for item in store.list_shopping_pass_items(user_id=owner_id, buddy_id=buddy_id)] == ["open"]
+    assert reopened.shopping_item_id != first.shopping_item_id
+    assert [item.status for item in store.list_shopping_pass_items(user_id=owner_id, buddy_id=buddy_id, include_done=True)] == [
+        "done",
+        "open",
+    ]
 
 
 def test_update_proposal_locked_requires_database_row_to_still_be_pending() -> None:

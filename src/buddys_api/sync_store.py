@@ -142,6 +142,17 @@ def build_snapshot(
         for binding in device_store.list_bindings()
         if binding.buddy_id in visible_buddy_ids
     }
+    state_memory_projection = _state_memory_projection(
+        buddies=buddies,
+        user_id=user_id,
+        state_memory_store=state_memory_store,
+        traces=visible_traces,
+    )
+    desired_states = _desired_states_projection(
+        device_store=device_store,
+        devices=[device for device in device_store.list_devices() if device.device_id in visible_device_ids],
+        shopping_pass_summary_by_buddy=state_memory_projection.get("shopping_pass_summary_by_buddy", {}),
+    )
 
     return {
         "state_revision": sync_store.visible_state_revision(user_id),
@@ -166,10 +177,7 @@ def build_snapshot(
             for heartbeat in device_store.list_latest_heartbeats()
             if heartbeat.device_id in visible_device_ids
         },
-        "desired_states": {
-            device_id: _safe_dump(device_store.get_desired_state(device_id))
-            for device_id in sorted(visible_device_ids)
-        },
+        "desired_states": desired_states,
         "device_events": [
             _safe_dump(event)
             for event in device_store.list_all_events()
@@ -179,12 +187,7 @@ def build_snapshot(
         "cost_summary": _cost_summary(costs),
         "plan_usage": _plan_usage_summary(buddies=buddies, user_id=user_id, usage_store=usage_store),
         "agents": _agent_summaries(agent_store=agent_store, user_id=user_id),
-        "state_memory": _state_memory_projection(
-            buddies=buddies,
-            user_id=user_id,
-            state_memory_store=state_memory_store,
-            traces=visible_traces,
-        ),
+        "state_memory": state_memory_projection,
     }
 
 
@@ -345,17 +348,25 @@ def _state_memory_projection(
     recipes_by_buddy_models: dict[str, list[Any]] = {}
     history_by_buddy_models: dict[str, list[Any]] = {}
     summary_by_buddy: dict[str, dict[str, Any]] = {}
+    shopping_pass_by_buddy_models: dict[str, list[Any]] = {}
+    shopping_pass_summary_by_buddy: dict[str, dict[str, Any]] = {}
 
     for buddy in buddies:
         items = state_memory_store.list_items(user_id=user_id, buddy_id=buddy.buddy_id)
         pending = state_memory_store.list_pending_proposals(user_id=user_id, buddy_id=buddy.buddy_id)
         recipes = state_memory_store.list_recipes(user_id=user_id, buddy_id=buddy.buddy_id)
         history = state_memory_store.list_history(user_id=user_id, buddy_id=buddy.buddy_id)
+        shopping_pass_items = state_memory_store.list_shopping_pass_items(user_id=user_id, buddy_id=buddy.buddy_id)
         items_by_buddy_models[buddy.buddy_id] = items
         pending_by_buddy_models[buddy.buddy_id] = pending
         recipes_by_buddy_models[buddy.buddy_id] = recipes
         history_by_buddy_models[buddy.buddy_id] = history
+        shopping_pass_by_buddy_models[buddy.buddy_id] = shopping_pass_items
         summary_by_buddy[buddy.buddy_id] = state_memory_store.summarize_buddy_state(
+            user_id=user_id,
+            buddy_id=buddy.buddy_id,
+        )
+        shopping_pass_summary_by_buddy[buddy.buddy_id] = state_memory_store.summarize_shopping_pass(
             user_id=user_id,
             buddy_id=buddy.buddy_id,
         )
@@ -389,6 +400,16 @@ def _state_memory_projection(
                 or summary["recently_consumed_count"]
             )
         },
+        "shopping_pass_by_buddy": {
+            buddy_id: [_safe_dump(item) for item in items]
+            for buddy_id, items in shopping_pass_by_buddy_models.items()
+            if items
+        },
+        "shopping_pass_summary_by_buddy": {
+            buddy_id: summary
+            for buddy_id, summary in shopping_pass_summary_by_buddy.items()
+            if summary["open_count"] or summary["done_count"]
+        },
         "latest_query_by_buddy": latest_queries_by_buddy,
         "proactive_hint_by_buddy": _proactive_state_memory_hints_by_buddy(
             items_by_buddy=items_by_buddy_models,
@@ -408,10 +429,31 @@ def _empty_state_memory_projection() -> dict[str, Any]:
         "pending_proposals_by_buddy": {},
         "recipes_by_buddy": {},
         "summary_by_buddy": {},
+        "shopping_pass_by_buddy": {},
+        "shopping_pass_summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
         "recent_activity_by_buddy": {},
     }
+
+
+def _desired_states_projection(
+    *,
+    device_store: DeviceRegistry,
+    devices: list[Any],
+    shopping_pass_summary_by_buddy: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    projected: dict[str, dict[str, Any]] = {}
+    for device in devices:
+        payload = _safe_dump(device_store.get_desired_state(device.device_id))
+        shopping_pass_summary = shopping_pass_summary_by_buddy.get(device.buddy_id)
+        if shopping_pass_summary and shopping_pass_summary.get("open_count"):
+            payload["shopping_pass"] = {
+                "open_count": shopping_pass_summary["open_count"],
+                "top_open_names": shopping_pass_summary.get("top_open_names", []),
+            }
+        projected[device.device_id] = payload
+    return projected
 
 
 def _latest_state_memory_queries_by_buddy(

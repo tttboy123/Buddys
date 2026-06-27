@@ -13,6 +13,7 @@ from buddys_api.state_memory_models import (
     StateMemoryRecipeIngredient,
     StateMemoryQueryAnswer,
     StateMemoryQueryRequest,
+    StateMemoryShoppingPassItem,
 )
 
 
@@ -182,6 +183,72 @@ def test_state_memory_recipe_models_reject_blank_recipe_names_and_ingredients() 
         ),
         lambda: StateMemoryRecipeCreateRequest(name="   ", ingredients=["五花肉"]),
         lambda: StateMemoryRecipeCreateRequest(name="红烧肉", ingredients=["   "]),
+    ]:
+        with pytest.raises(ValidationError):
+            factory()
+
+
+def test_state_memory_shopping_pass_item_exports_bounded_follow_through_fields() -> None:
+    item = StateMemoryShoppingPassItem(
+        shopping_item_id="shop_item_milk",
+        user_id="user_1",
+        buddy_id="buddy_1",
+        name="牛奶",
+        normalized_name="牛奶",
+        status="open",
+        source_kind="missing_for_recipe",
+        source_summary="Add missing recipe items from 红烧肉.",
+        created_at="2026-06-28T12:00:00+08:00",
+        updated_at="2026-06-28T12:00:00+08:00",
+    )
+
+    assert item.model_dump() == {
+        "schema_version": "state_memory_shopping_pass_item.v1",
+        "shopping_item_id": "shop_item_milk",
+        "user_id": "user_1",
+        "buddy_id": "buddy_1",
+        "name": "牛奶",
+        "normalized_name": "牛奶",
+        "status": "open",
+        "source_kind": "missing_for_recipe",
+        "source_summary": "Add missing recipe items from 红烧肉.",
+        "created_at": "2026-06-28T12:00:00+08:00",
+        "updated_at": "2026-06-28T12:00:00+08:00",
+    }
+
+
+def test_state_memory_shopping_pass_item_rejects_invalid_status_source_and_blank_names() -> None:
+    for factory in [
+        lambda: StateMemoryShoppingPassItem(
+            shopping_item_id="shop_item_1",
+            user_id="user_1",
+            buddy_id="buddy_1",
+            name="   ",
+            normalized_name="blank",
+            status="open",
+            source_kind="manual",
+            source_summary="manual add",
+        ),
+        lambda: StateMemoryShoppingPassItem(
+            shopping_item_id="shop_item_1",
+            user_id="user_1",
+            buddy_id="buddy_1",
+            name="牛奶",
+            normalized_name="牛奶",
+            status="pending",
+            source_kind="manual",
+            source_summary="manual add",
+        ),
+        lambda: StateMemoryShoppingPassItem(
+            shopping_item_id="shop_item_1",
+            user_id="user_1",
+            buddy_id="buddy_1",
+            name="牛奶",
+            normalized_name="牛奶",
+            status="open",
+            source_kind="latest_query",
+            source_summary="invalid source",
+        ),
     ]:
         with pytest.raises(ValidationError):
             factory()

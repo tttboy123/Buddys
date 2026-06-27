@@ -57,6 +57,11 @@ class DeviceRecentActivityEntry(BaseModel):
     created_at: NonEmptyStr
 
 
+class DeviceShoppingPassProjection(BaseModel):
+    open_count: int = Field(ge=0, default=0)
+    top_open_names: list[NonEmptyStr] = Field(default_factory=list)
+
+
 class Device(BaseModel):
     schema_version: Literal["device.v1"] = "device.v1"
     device_id: NonEmptyStr
@@ -115,6 +120,7 @@ class DeviceDesiredState(BaseModel):
     source_trace_id: str | None = None
     idempotency_key: str | None = None
     state_memory: DeviceStateMemoryProjection | None = None
+    shopping_pass: DeviceShoppingPassProjection | None = None
     proactive_hint: DeviceProactiveHint | None = None
     recent_activity: list[DeviceRecentActivityEntry] = Field(default_factory=list)
     updated_at: str = Field(default_factory=now_iso)

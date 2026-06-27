@@ -55,6 +55,9 @@ def render_screen(desired_state: dict[str, Any]) -> str:
     if state == "asking_confirmation" and proposal_text:
         lines.append(f"confirm: {_compact(proposal_text)}")
     lines.extend(_state_memory_lines(desired_state.get("state_memory")))
+    shopping_line = _shopping_pass_line(desired_state.get("shopping_pass"))
+    if shopping_line:
+        lines.append(shopping_line)
     hint_line = _proactive_hint_line(desired_state.get("proactive_hint"))
     if hint_line:
         lines.append(hint_line)
@@ -183,6 +186,20 @@ def _proactive_hint_line(proactive_hint: Any) -> str | None:
     if not isinstance(message, str) or not message.strip():
         return None
     return f"hint: {_compact(message.strip())}"
+
+
+def _shopping_pass_line(shopping_pass: Any) -> str | None:
+    if not isinstance(shopping_pass, dict):
+        return None
+    names = shopping_pass.get("top_open_names")
+    if isinstance(names, list):
+        labels = [str(name).strip() for name in names if str(name).strip()]
+        if labels:
+            return f"shopping: {_compact(', '.join(labels))}"
+    open_count = shopping_pass.get("open_count")
+    if isinstance(open_count, int) and open_count > 0:
+        return f"shopping: {open_count} item(s)"
+    return None
 
 
 def _recent_activity_line(recent_activity: Any) -> str | None:

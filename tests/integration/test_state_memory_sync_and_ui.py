@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
 
+from buddys_api.device_models import Device
 from buddys_api.main import create_app
 from buddys_api.providers.openai_compatible_provider import ProviderUsage, StateMemoryQueryUnderstanding
 from buddys_api.state_memory_models import StateMemoryDelta
@@ -70,6 +71,8 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
         "pending_proposals_by_buddy": {},
         "recipes_by_buddy": {},
         "summary_by_buddy": {},
+        "shopping_pass_by_buddy": {},
+        "shopping_pass_summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
         "recent_activity_by_buddy": {},
@@ -79,6 +82,8 @@ def test_sync_snapshot_exposes_owner_only_state_memory_projection_and_keeps_exis
         "pending_proposals_by_buddy": {},
         "recipes_by_buddy": {},
         "summary_by_buddy": {},
+        "shopping_pass_by_buddy": {},
+        "shopping_pass_summary_by_buddy": {},
         "latest_query_by_buddy": {},
         "proactive_hint_by_buddy": {},
         "recent_activity_by_buddy": {},
@@ -120,6 +125,52 @@ def test_sync_snapshot_projects_single_traceable_proactive_memory_hint(tmp_path)
     assert hint["message"]
     assert hint["basis"]["item_names"] == ["鸡蛋"]
     assert hint["kind"] == "consumption_inference"
+
+
+def test_sync_snapshot_projects_shopping_pass_and_device_summary_for_auth_workspace(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "shopping-sync-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    device = app.state.device_store.save_device(
+        Device(
+            device_id="device_body_001",
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.1.0",
+        )
+    )
+
+    first = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "牛奶"},
+    )
+    second = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "生抽"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    shopping_items = snapshot["state_memory"]["shopping_pass_by_buddy"][buddy["buddy_id"]]
+    shopping_summary = snapshot["state_memory"]["shopping_pass_summary_by_buddy"][buddy["buddy_id"]]
+    desired_state = snapshot["desired_states"][device.device_id]
+
+    assert [item["name"] for item in shopping_items] == ["牛奶", "生抽"]
+    assert shopping_summary["open_count"] == 2
+    assert shopping_summary["top_open_names"] == ["牛奶", "生抽"]
+    assert desired_state["shopping_pass"]["open_count"] == 2
+    assert desired_state["shopping_pass"]["top_open_names"] == ["牛奶", "生抽"]
 
 
 def test_sync_snapshot_projects_unknown_quantity_without_fake_placeholder(tmp_path) -> None:

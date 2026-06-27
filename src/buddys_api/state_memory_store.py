@@ -13,6 +13,7 @@ from buddys_api.state_memory_models import (
     StateMemoryPendingProposal,
     StateMemoryRecipe,
     StateMemoryRecipeIngredient,
+    StateMemoryShoppingPassItem,
 )
 
 RECENT_CONSUMPTION_WINDOW = timedelta(days=3)
@@ -205,6 +206,146 @@ class StateMemoryStore:
             (user_id, buddy_id),
         ).fetchall()
         return [_recipe_from_row(row) for row in rows]
+
+    def add_shopping_pass_item(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        name: str,
+        source_kind: str,
+        source_summary: str,
+    ) -> StateMemoryShoppingPassItem:
+        normalized_name = _normalize_item_name(name)
+        if not normalized_name:
+            raise ValueError("shopping_pass_name_required")
+        with self.connection:
+            existing = self._find_open_shopping_pass_item_locked(
+                user_id=user_id,
+                buddy_id=buddy_id,
+                normalized_name=normalized_name,
+            )
+            if existing is not None:
+                return existing
+            timestamp = now_iso()
+            item = StateMemoryShoppingPassItem(
+                shopping_item_id=new_id("shopping_item"),
+                user_id=user_id,
+                buddy_id=buddy_id,
+                name=" ".join(name.strip().split()),
+                normalized_name=normalized_name,
+                status="open",
+                source_kind=source_kind,
+                source_summary=source_summary,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            self._insert_shopping_pass_item_locked(item)
+            return item
+
+    def list_shopping_pass_items(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        include_done: bool = False,
+    ) -> list[StateMemoryShoppingPassItem]:
+        status_clause = "" if include_done else "AND status = 'open'"
+        rows = self.connection.execute(
+            f"""
+            SELECT shopping_item_id, user_id, buddy_id, name, normalized_name,
+                   status, source_kind, source_summary, created_at, updated_at
+            FROM state_memory_shopping_pass_items
+            WHERE user_id = ? AND buddy_id = ?
+            {status_clause}
+            ORDER BY created_at, shopping_item_id
+            """,
+            (user_id, buddy_id),
+        ).fetchall()
+        return [_shopping_pass_item_from_row(row) for row in rows]
+
+    def mark_shopping_pass_item_done(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        shopping_item_id: str,
+    ) -> StateMemoryShoppingPassItem:
+        item = self._get_owned_shopping_pass_item(
+            user_id=user_id,
+            buddy_id=buddy_id,
+            shopping_item_id=shopping_item_id,
+        )
+        if item.status == "done":
+            return item
+        updated = StateMemoryShoppingPassItem(
+            shopping_item_id=item.shopping_item_id,
+            user_id=item.user_id,
+            buddy_id=item.buddy_id,
+            name=item.name,
+            normalized_name=item.normalized_name,
+            status="done",
+            source_kind=item.source_kind,
+            source_summary=item.source_summary,
+            created_at=item.created_at,
+            updated_at=now_iso(),
+        )
+        with self.connection:
+            self._update_shopping_pass_item_locked(updated)
+        return updated
+
+    def summarize_shopping_pass(self, *, user_id: str, buddy_id: str) -> dict[str, object]:
+        items = self.list_shopping_pass_items(user_id=user_id, buddy_id=buddy_id, include_done=True)
+        open_items = [item for item in items if item.status == "open"]
+        done_items = [item for item in items if item.status == "done"]
+        return {
+            "open_count": len(open_items),
+            "done_count": len(done_items),
+            "top_open_names": [item.name for item in open_items[:3]],
+            "updated_at": _latest_timestamp([item.updated_at for item in items]),
+        }
+
+    def current_shopping_pass_hint(self, *, user_id: str, buddy_id: str) -> dict[str, object] | None:
+        items = self.list_items(user_id=user_id, buddy_id=buddy_id)
+        history = self.list_history(user_id=user_id, buddy_id=buddy_id)
+        recent_consumption = [
+            entry
+            for entry in history
+            if entry.change_type in {"consume", "consumed"} and is_recent_consumption_timestamp(entry.created_at)
+        ]
+        if recent_consumption:
+            recent_consumption.sort(key=lambda entry: (entry.created_at, entry.history_id))
+            entry = recent_consumption[-1]
+            matching_item = next((item for item in items if item.item_id == entry.item_id), None)
+            return {
+                "kind": "consumption_inference",
+                "message": f"Buddy noticed {entry.item_name} was used recently. Want to review whether it needs a refill?",
+                "basis": {
+                    "item_ids": [entry.item_id],
+                    "item_names": [entry.item_name],
+                    "recent_change_type": entry.change_type,
+                    "last_seen_at": matching_item.last_seen_at if matching_item is not None else None,
+                },
+            }
+
+        low_items = [
+            item
+            for item in items
+            if item.status == "active" and item.quantity is not None and item.quantity <= 2
+        ]
+        if not low_items:
+            return None
+        low_items.sort(key=lambda item: (item.quantity, item.updated_at, item.name))
+        item = low_items[0]
+        return {
+            "kind": "consumption_inference",
+            "message": f"{item.name} might be running low. Add it to the next shopping pass?",
+            "basis": {
+                "item_ids": [item.item_id],
+                "item_names": [item.name],
+                "last_seen_at": item.last_seen_at,
+            },
+        }
 
     def delete_recipe(self, *, user_id: str, buddy_id: str, recipe_id: str) -> None:
         with self.connection:
@@ -474,6 +615,47 @@ class StateMemoryStore:
             return None
         return _item_from_row(row)
 
+    def _find_open_shopping_pass_item_locked(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        normalized_name: str,
+    ) -> StateMemoryShoppingPassItem | None:
+        row = self.connection.execute(
+            """
+            SELECT shopping_item_id, user_id, buddy_id, name, normalized_name,
+                   status, source_kind, source_summary, created_at, updated_at
+            FROM state_memory_shopping_pass_items
+            WHERE user_id = ? AND buddy_id = ? AND normalized_name = ? AND status = 'open'
+            LIMIT 1
+            """,
+            (user_id, buddy_id, normalized_name),
+        ).fetchone()
+        if row is None:
+            return None
+        return _shopping_pass_item_from_row(row)
+
+    def _get_owned_shopping_pass_item(
+        self,
+        *,
+        user_id: str,
+        buddy_id: str,
+        shopping_item_id: str,
+    ) -> StateMemoryShoppingPassItem:
+        row = self.connection.execute(
+            """
+            SELECT shopping_item_id, user_id, buddy_id, name, normalized_name,
+                   status, source_kind, source_summary, created_at, updated_at
+            FROM state_memory_shopping_pass_items
+            WHERE shopping_item_id = ? AND user_id = ? AND buddy_id = ?
+            """,
+            (shopping_item_id, user_id, buddy_id),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"shopping pass item not found: {shopping_item_id}")
+        return _shopping_pass_item_from_row(row)
+
     def _insert_item_locked(self, item: StateMemoryItem) -> None:
         self.connection.execute(
             """
@@ -596,6 +778,49 @@ class StateMemoryStore:
             ),
         )
 
+    def _insert_shopping_pass_item_locked(self, item: StateMemoryShoppingPassItem) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO state_memory_shopping_pass_items (
+                shopping_item_id, user_id, buddy_id, name, normalized_name,
+                status, source_kind, source_summary, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.shopping_item_id,
+                item.user_id,
+                item.buddy_id,
+                item.name,
+                item.normalized_name,
+                item.status,
+                item.source_kind,
+                item.source_summary,
+                item.created_at,
+                item.updated_at,
+            ),
+        )
+
+    def _update_shopping_pass_item_locked(self, item: StateMemoryShoppingPassItem) -> None:
+        self.connection.execute(
+            """
+            UPDATE state_memory_shopping_pass_items
+            SET name = ?, normalized_name = ?, status = ?, source_kind = ?, source_summary = ?, updated_at = ?
+            WHERE shopping_item_id = ? AND user_id = ? AND buddy_id = ?
+            """,
+            (
+                item.name,
+                item.normalized_name,
+                item.status,
+                item.source_kind,
+                item.source_summary,
+                item.updated_at,
+                item.shopping_item_id,
+                item.user_id,
+                item.buddy_id,
+            ),
+        )
+
     def _update_proposal_locked(
         self,
         proposal: StateMemoryPendingProposal,
@@ -701,6 +926,21 @@ def _recipe_from_row(row: sqlite3.Row) -> StateMemoryRecipe:
             StateMemoryRecipeIngredient.model_validate(ingredient)
             for ingredient in json.loads(row["ingredients_json"])
         ],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _shopping_pass_item_from_row(row: sqlite3.Row) -> StateMemoryShoppingPassItem:
+    return StateMemoryShoppingPassItem(
+        shopping_item_id=row["shopping_item_id"],
+        user_id=row["user_id"],
+        buddy_id=row["buddy_id"],
+        name=row["name"],
+        normalized_name=row["normalized_name"],
+        status=row["status"],
+        source_kind=row["source_kind"],
+        source_summary=row["source_summary"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

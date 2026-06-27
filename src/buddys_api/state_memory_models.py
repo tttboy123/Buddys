@@ -16,6 +16,8 @@ StateMemoryCaptureSource = Literal["voice", "photo", "scan", "conversation", "in
 StateMemoryOperation = Literal["upsert", "consume", "remove"]
 StateMemoryProposalStatus = Literal["pending", "confirmed", "rejected"]
 StateMemoryItemStatus = Literal["active", "consumed", "removed"]
+StateMemoryShoppingPassItemStatus = Literal["open", "done"]
+StateMemoryShoppingPassSourceKind = Literal["manual", "proactive_hint", "missing_for_recipe"]
 
 
 class StateMemoryDelta(BaseModel):
@@ -168,6 +170,24 @@ class StateMemoryQueryAnswer(BaseModel):
     missing_items: list[NonEmptyStr] = Field(default_factory=list)
     has_item: bool | None = None
     trace_id: NonEmptyStr
+
+
+class StateMemoryShoppingPassItem(BaseModel):
+    schema_version: Literal["state_memory_shopping_pass_item.v1"] = "state_memory_shopping_pass_item.v1"
+    shopping_item_id: NonEmptyStr
+    user_id: NonEmptyStr
+    buddy_id: NonEmptyStr
+    name: NonEmptyStr
+    normalized_name: NonEmptyStr
+    status: StateMemoryShoppingPassItemStatus = "open"
+    source_kind: StateMemoryShoppingPassSourceKind
+    source_summary: NonEmptyStr
+    created_at: str = Field(default_factory=now_iso)
+    updated_at: str = Field(default_factory=now_iso)
+
+
+class StateMemoryShoppingPassCreateRequest(BaseModel):
+    name: NonEmptyStr
 
 
 def _normalize_memory_text(value: str) -> str:

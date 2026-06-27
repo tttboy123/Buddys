@@ -5,6 +5,7 @@ const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
 const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
 const DEFAULT_RECIPE_EMPTY = "No saved recipes yet.";
+const DEFAULT_SHOPPING_PASS_EMPTY = "No shopping-pass items yet.";
 const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
 
 const state = {
@@ -20,6 +21,8 @@ const state = {
     confirmedItems: [],
     pendingProposals: [],
     recipes: [],
+    shoppingPassItems: [],
+    shoppingPassSummary: {},
     latestQuery: null,
     recentActivity: [],
     proactiveHint: null,
@@ -193,6 +196,8 @@ function clearSession() {
   state.workspace.confirmedItems = [];
   state.workspace.pendingProposals = [];
   state.workspace.recipes = [];
+  state.workspace.shoppingPassItems = [];
+  state.workspace.shoppingPassSummary = {};
   state.workspace.latestQuery = null;
   state.workspace.recentActivity = [];
   state.workspace.proactiveHint = null;
@@ -227,6 +232,7 @@ function clearSession() {
   $("deviceOwnerInstructionInput").value = "";
   $("recipeNameInput").value = "";
   $("recipeIngredientsInput").value = "";
+  $("shoppingPassNameInput").value = "";
   renderExperienceShell();
 }
 
@@ -250,6 +256,7 @@ function syncAuthControls() {
   const hasAgentName = Boolean($("agentManagementNameInput")?.value.trim());
   const hasRecipeName = Boolean($("recipeNameInput")?.value.trim());
   const hasRecipeIngredients = Boolean($("recipeIngredientsInput")?.value.trim());
+  const hasShoppingPassName = Boolean($("shoppingPassNameInput")?.value.trim());
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
@@ -272,6 +279,10 @@ function syncAuthControls() {
   $("recipeNameInput").disabled = !hasBuddy;
   $("recipeIngredientsInput").disabled = !hasBuddy;
   $("createRecipeButton").disabled = !hasBuddy || !hasRecipeName || !hasRecipeIngredients;
+  $("shoppingPassNameInput").disabled = !hasBuddy;
+  $("shoppingPassAddButton").disabled = !hasBuddy || !hasShoppingPassName;
+  $("shoppingPassPromoteHintButton").disabled = !hasBuddy;
+  $("shoppingPassPromoteLatestQueryButton").disabled = !hasBuddy;
   $("proposalCorrectionInput").disabled = !hasBuddy || !selectedProposal();
   $("submitCorrectionButton").disabled = !hasBuddy || !selectedProposal();
   $("deviceOwnerInstructionInput").disabled = !hasBuddy || !hasDevice;
@@ -646,6 +657,77 @@ function renderRecipeShelf() {
     actions.appendChild(deleteButton);
     item.appendChild(actions);
     list.appendChild(item);
+  });
+
+  syncAuthControls();
+}
+
+function shoppingPassSourceLabel(item) {
+  if (item.source_kind === "manual") {
+    return "manual";
+  }
+  if (item.source_kind === "proactive_hint") {
+    return "hint";
+  }
+  if (item.source_kind === "missing_for_recipe") {
+    return "recipe gap";
+  }
+  return item.source_kind || "unknown";
+}
+
+function renderShoppingPass() {
+  const list = $("shoppingPassList");
+  const summary = state.workspace.shoppingPassSummary || {};
+  list.replaceChildren();
+
+  if (!isAuthenticated()) {
+    $("shoppingPassStatus").textContent = "Login to build a shopping pass for this Buddy.";
+  } else if (!state.workspace.buddyId) {
+    $("shoppingPassStatus").textContent = "Create your first Buddy before planning the next shopping pass.";
+  } else if (state.workspace.shoppingPassItems.length) {
+    const openCount = Number(summary.open_count || state.workspace.shoppingPassItems.length || 0);
+    const doneCount = Number(summary.done_count || 0);
+    $("shoppingPassStatus").textContent = `${openCount} open item(s). ${doneCount} done item(s) already cleared from this Buddy's pass.`;
+  } else if (Number(summary.done_count || 0) > 0) {
+    $("shoppingPassStatus").textContent = "All promoted items are done. Add another item or promote a new hint/query.";
+  } else {
+    $("shoppingPassStatus").textContent =
+      "Add items manually or promote the latest hint/query to keep the next shopping pass ready.";
+  }
+
+  if (!state.workspace.shoppingPassItems.length) {
+    const emptyItem = document.createElement("li");
+    emptyItem.textContent = DEFAULT_SHOPPING_PASS_EMPTY;
+    list.appendChild(emptyItem);
+    syncAuthControls();
+    return;
+  }
+
+  state.workspace.shoppingPassItems.forEach((item) => {
+    const entry = document.createElement("li");
+    entry.className = "proposal-card";
+
+    const title = document.createElement("strong");
+    title.textContent = item.name;
+    entry.appendChild(title);
+
+    const meta = document.createElement("p");
+    meta.className = "support-copy";
+    meta.textContent = `${shoppingPassSourceLabel(item)} · ${item.source_summary}`;
+    entry.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "button-row";
+
+    const doneButton = document.createElement("button");
+    doneButton.type = "button";
+    doneButton.className = "ghost-button";
+    doneButton.textContent = "Done";
+    doneButton.addEventListener("click", () => markShoppingPassItemDone(item.shopping_item_id));
+
+    actions.appendChild(doneButton);
+    entry.appendChild(actions);
+    list.appendChild(entry);
   });
 
   syncAuthControls();
@@ -1275,6 +1357,7 @@ function renderExperienceShell() {
   renderProposalInbox();
   renderLatestAnswer();
   renderRecipeShelf();
+  renderShoppingPass();
   renderAgentManagement();
   renderRecentActivity();
   renderCostGovernancePanel();
@@ -1435,6 +1518,8 @@ function projectWorkspace(snapshot) {
     state.workspace.confirmedItems = [];
     state.workspace.pendingProposals = [];
     state.workspace.recipes = [];
+    state.workspace.shoppingPassItems = [];
+    state.workspace.shoppingPassSummary = {};
     state.workspace.latestQuery = null;
     state.workspace.recentActivity = [];
     state.workspace.proactiveHint = null;
@@ -1466,6 +1551,8 @@ function projectWorkspace(snapshot) {
     state.workspace.confirmedItems = buddyId ? stateMemory.items_by_buddy?.[buddyId] || [] : [];
     state.workspace.pendingProposals = buddyId ? stateMemory.pending_proposals_by_buddy?.[buddyId] || [] : [];
     state.workspace.recipes = buddyId ? stateMemory.recipes_by_buddy?.[buddyId] || [] : [];
+    state.workspace.shoppingPassItems = buddyId ? stateMemory.shopping_pass_by_buddy?.[buddyId] || [] : [];
+    state.workspace.shoppingPassSummary = buddyId ? stateMemory.shopping_pass_summary_by_buddy?.[buddyId] || {} : {};
     state.workspace.latestQuery = buddyId ? stateMemory.latest_query_by_buddy?.[buddyId] || null : null;
     state.workspace.recentActivity = buddyId ? stateMemory.recent_activity_by_buddy?.[buddyId] || [] : [];
     state.workspace.proactiveHint = buddyId ? stateMemory.proactive_hint_by_buddy?.[buddyId] || null : null;
@@ -1766,6 +1853,98 @@ async function deleteRecipe(recipeId) {
   }
 }
 
+async function addShoppingPassItem() {
+  if (!state.workspace.buddyId) {
+    setWorkspaceStatus("Create or select a Buddy before adding a shopping-pass item.");
+    return;
+  }
+  const name = $("shoppingPassNameInput").value.trim();
+  if (!name) {
+    setWorkspaceStatus("Shopping-pass item name is required.");
+    syncAuthControls();
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/items`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+    $("shoppingPassNameInput").value = "";
+    setWorkspaceStatus(`Shopping pass item added: ${response.item.name}`);
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    setWorkspaceStatus(`Shopping pass add failed: ${error.message}`);
+  }
+}
+
+async function promoteShoppingPassHint() {
+  if (!state.workspace.buddyId) {
+    setWorkspaceStatus("Create or select a Buddy before promoting a shopping hint.");
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/promote-hint`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    setWorkspaceStatus(`Shopping pass item added from hint: ${response.item.name}`);
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    setWorkspaceStatus(`Shopping pass hint promotion failed: ${error.message}`);
+  }
+}
+
+async function promoteShoppingPassLatestQuery() {
+  if (!state.workspace.buddyId) {
+    setWorkspaceStatus("Create or select a Buddy before promoting the latest query.");
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/promote-latest-query`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const itemNames = (response.items || []).map((item) => item.name);
+    setWorkspaceStatus(
+      itemNames.length
+        ? `Shopping pass updated from latest query: ${itemNames.join(" / ")}`
+        : "Shopping pass updated from latest query.",
+    );
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    setWorkspaceStatus(`Shopping pass query promotion failed: ${error.message}`);
+  }
+}
+
+async function markShoppingPassItemDone(shoppingItemId) {
+  if (!state.workspace.buddyId) {
+    setWorkspaceStatus("Create or select a Buddy before finishing a shopping-pass item.");
+    return;
+  }
+  try {
+    const response = await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/items/${shoppingItemId}/done`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    setWorkspaceStatus(`Shopping pass item done: ${response.item.name}`);
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    setWorkspaceStatus(`Shopping pass done failed: ${error.message}`);
+  }
+}
+
 async function confirmProposal(proposalId) {
   try {
     await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/proposals/${proposalId}/confirm`, {
@@ -1866,6 +2045,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("recipeNameInput").addEventListener("input", syncAuthControls);
   $("recipeIngredientsInput").addEventListener("input", syncAuthControls);
   $("createRecipeButton").addEventListener("click", submitRecipe);
+  $("shoppingPassNameInput").addEventListener("input", syncAuthControls);
+  $("shoppingPassAddButton").addEventListener("click", addShoppingPassItem);
+  $("shoppingPassPromoteHintButton").addEventListener("click", promoteShoppingPassHint);
+  $("shoppingPassPromoteLatestQueryButton").addEventListener("click", promoteShoppingPassLatestQuery);
   $("submitCorrectionButton").addEventListener("click", submitCorrection);
   $("dismissProactiveHintButton").addEventListener("click", dismissProactiveHint);
   $("deviceOwnerInstructionInput").addEventListener("input", () => {

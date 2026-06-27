@@ -122,6 +122,12 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert 'id="recipeNameInput"' in html
     assert 'id="recipeIngredientsInput"' in html
     assert 'id="createRecipeButton"' in html
+    assert 'id="shoppingPassPanel"' in html
+    assert 'id="shoppingPassList"' in html
+    assert 'id="shoppingPassNameInput"' in html
+    assert 'id="shoppingPassAddButton"' in html
+    assert 'id="shoppingPassPromoteHintButton"' in html
+    assert 'id="shoppingPassPromoteLatestQueryButton"' in html
     assert "Why this answer / details" in html
 
 
@@ -257,6 +263,42 @@ def test_console_assets_project_workspace_maps_recipe_shelf_snapshot_and_reset_s
     assert "state.workspace.recipes.length" in render_recipe_shelf_body
     assert "recipeShelfStatus" in render_recipe_shelf_body
     assert "deleteRecipe(recipe.recipe_id)" in render_recipe_shelf_body
+
+
+def test_console_assets_project_workspace_maps_shopping_pass_snapshot_and_actions() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    project_workspace_body = extract_function_body(script, "projectWorkspace")
+    clear_session_body = extract_function_body(script, "clearSession")
+    sync_auth_controls_body = extract_function_body(script, "syncAuthControls")
+    render_shopping_pass_body = extract_function_body(script, "renderShoppingPass")
+    add_item_body = extract_function_body(script, "addShoppingPassItem")
+    promote_hint_body = extract_function_body(script, "promoteShoppingPassHint")
+    promote_latest_query_body = extract_function_body(script, "promoteShoppingPassLatestQuery")
+    mark_done_body = extract_function_body(script, "markShoppingPassItemDone")
+
+    assert "renderShoppingPass" in script
+    assert "shopping_pass_by_buddy" in project_workspace_body
+    assert "shopping_pass_summary_by_buddy" in project_workspace_body
+    assert 'state.workspace.shoppingPassItems = buddyId ? stateMemory.shopping_pass_by_buddy?.[buddyId] || [] : [];' in project_workspace_body
+    assert 'state.workspace.shoppingPassSummary = buddyId ? stateMemory.shopping_pass_summary_by_buddy?.[buddyId] || {} : {};' in project_workspace_body
+    assert "state.workspace.shoppingPassItems = [];" in clear_session_body
+    assert "state.workspace.shoppingPassSummary = {};" in clear_session_body
+    assert "shoppingPassNameInput" in sync_auth_controls_body
+    assert "shoppingPassAddButton" in sync_auth_controls_body
+    assert "shoppingPassPromoteHintButton" in sync_auth_controls_body
+    assert "shoppingPassPromoteLatestQueryButton" in sync_auth_controls_body
+    assert "shoppingPassStatus" in render_shopping_pass_body
+    assert "state.workspace.shoppingPassItems.length" in render_shopping_pass_body
+    assert "markShoppingPassItemDone(item.shopping_item_id)" in render_shopping_pass_body
+    assert 'requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/items`' in add_item_body
+    assert 'requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/promote-hint`' in promote_hint_body
+    assert 'requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/promote-latest-query`' in promote_latest_query_body
+    assert 'requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/items/${shoppingItemId}/done`' in mark_done_body
+    assert '$("shoppingPassAddButton").addEventListener("click", addShoppingPassItem);' in script
+    assert '$("shoppingPassPromoteHintButton").addEventListener("click", promoteShoppingPassHint);' in script
+    assert '$("shoppingPassPromoteLatestQueryButton").addEventListener("click", promoteShoppingPassLatestQuery);' in script
 
 
 def test_console_assets_project_safe_recent_activity_for_transparency_view() -> None:

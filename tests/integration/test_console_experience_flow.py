@@ -305,6 +305,128 @@ def test_console_experience_flow_owner_can_publish_device_desired_state_and_cons
     assert snapshot["device_events"] == []
 
 
+def test_console_experience_flow_shopping_pass_projects_query_promotion_hint_and_device_summary(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "shopping-console@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    app.state.device_store.pair_device(
+        device=Device(
+            device_id="device_body_shopping_001",
+            buddy_id=buddy["buddy_id"],
+            space_id=buddy["space_id"],
+            public_key="device-public-key",
+            pairing_state="paired",
+            firmware_version="0.2.0-sim",
+        ),
+        agent_machine=AgentMachine(
+            agent_machine_id="agent_machine_shopping_001",
+            owner_user_id=buddy["user_id"],
+            machine_type="local_mac",
+            endpoint="https://agent-machine.example.test",
+            public_key="agent-machine-public-key",
+            runtime_version="0.2.0-sim",
+            status="online",
+        ),
+        binding=BuddyRuntimeBinding(
+            buddy_id=buddy["buddy_id"],
+            agent_machine_id="agent_machine_shopping_001",
+            role="primary",
+        ),
+        pairing_token="pair-shopping-001",
+        idempotency_key="pair-shopping-001",
+    )
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="五花肉",
+        category="ingredient",
+        quantity=3,
+        unit="斤",
+        source="manual",
+        confidence=1.0,
+    )
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=1,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    create_recipe = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "红烧肉", "ingredients": ["五花肉", "生抽", "冰糖"]},
+    )
+    assert create_recipe.status_code == 201
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "做红烧肉还缺什么"},
+    )
+    assert query.status_code == 200
+    assert query.json()["answer_type"] == "missing_for_recipe"
+
+    promote_latest_query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-latest-query",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert promote_latest_query.status_code == 201
+    assert [item["name"] for item in promote_latest_query.json()["items"]] == ["冰糖", "生抽"]
+
+    promote_hint = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-hint",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert promote_hint.status_code == 201
+    assert promote_hint.json()["item"]["name"] == "鸡蛋"
+
+    manual_add = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "牛奶"},
+    )
+    assert manual_add.status_code == 201
+
+    listing = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listing.status_code == 200
+    sugar = next(item for item in listing.json()["items"] if item["name"] == "冰糖")
+
+    mark_done = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items/{sugar['shopping_item_id']}/done",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert mark_done.status_code == 200
+
+    snapshot = client.get("/sync/snapshot", headers={"Authorization": f"Bearer {token}"}).json()
+    state_memory = snapshot["state_memory"]
+    buddy_id = buddy["buddy_id"]
+
+    assert [item["name"] for item in state_memory["shopping_pass_by_buddy"][buddy_id]] == ["生抽", "鸡蛋", "牛奶"]
+    assert state_memory["shopping_pass_summary_by_buddy"][buddy_id]["open_count"] == 3
+    assert state_memory["shopping_pass_summary_by_buddy"][buddy_id]["done_count"] == 1
+    assert state_memory["shopping_pass_summary_by_buddy"][buddy_id]["top_open_names"] == ["生抽", "鸡蛋", "牛奶"]
+    assert snapshot["desired_states"]["device_body_shopping_001"]["shopping_pass"]["open_count"] == 3
+    assert snapshot["desired_states"]["device_body_shopping_001"]["shopping_pass"]["top_open_names"] == [
+        "生抽",
+        "鸡蛋",
+        "牛奶",
+    ]
+
+
 def _complete_state_memory_cycle(client: TestClient, *, token: str, buddy_id: str) -> None:
     capture = client.post(
         f"/me/buddies/{buddy_id}/state-memory/captures/voice",

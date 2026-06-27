@@ -117,6 +117,227 @@ def test_state_memory_api_returns_empty_lists_for_new_auth_owned_buddy(tmp_path)
     assert pending.json() == {"pending_proposals": []}
 
 
+def test_state_memory_shopping_pass_manual_add_list_and_done_flow(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "shopping-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    create_item = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "牛奶"},
+    )
+    assert create_item.status_code == 201
+
+    item = create_item.json()["item"]
+    listing = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    done = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items/{item['shopping_item_id']}/done",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    relisted = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert listing.status_code == 200
+    assert [entry["name"] for entry in listing.json()["items"]] == ["牛奶"]
+    assert listing.json()["summary"]["open_count"] == 1
+    assert done.status_code == 200
+    assert done.json()["item"]["status"] == "done"
+    assert relisted.status_code == 200
+    assert relisted.json()["items"] == []
+    assert relisted.json()["summary"]["open_count"] == 0
+    assert relisted.json()["summary"]["done_count"] == 1
+
+
+def test_state_memory_shopping_pass_promote_hint_creates_buddy_scoped_open_item(tmp_path) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "hint-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=1,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-hint",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["item"]["name"] == "鸡蛋"
+    assert response.json()["item"]["source_kind"] == "proactive_hint"
+
+
+def test_state_memory_shopping_pass_promote_hint_returns_409_when_no_current_hint_exists(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    token = register(client, "hint-empty@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-hint",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "shopping_pass_hint_unavailable"}}
+
+
+def test_state_memory_shopping_pass_promote_latest_query_uses_missing_recipe_answer_and_dedupes_open_items(
+    tmp_path,
+) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "query-owner@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="五花肉",
+        category="ingredient",
+        quantity=1,
+        unit="斤",
+        source="manual",
+        confidence=1.0,
+    )
+
+    recipe = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/recipes",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "红烧肉", "ingredients": ["五花肉", "生抽", "冰糖"]},
+    )
+    assert recipe.status_code == 201
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "做红烧肉还缺什么"},
+    )
+    assert query.status_code == 200
+    assert query.json()["answer_type"] == "missing_for_recipe"
+
+    first = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-latest-query",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    second = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-latest-query",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    listing = client.get(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert first.status_code == 201
+    assert [item["name"] for item in first.json()["items"]] == ["冰糖", "生抽"]
+    assert second.status_code == 201
+    assert [item["name"] for item in listing.json()["items"]] == ["冰糖", "生抽"]
+    assert listing.json()["summary"]["open_count"] == 2
+
+
+def test_state_memory_shopping_pass_promote_latest_query_returns_409_without_missing_recipe_answer(
+    tmp_path,
+) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "query-empty@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+    app.state.state_memory_store.create_item(
+        user_id=buddy["user_id"],
+        buddy_id=buddy["buddy_id"],
+        name="鸡蛋",
+        category="ingredient",
+        quantity=6,
+        unit="个",
+        source="manual",
+        confidence=1.0,
+    )
+
+    query = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "有鸡蛋吗"},
+    )
+    assert query.status_code == 200
+    assert query.json()["answer_type"] == "have_item"
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-latest-query",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": {"code": "shopping_pass_latest_query_unavailable"}}
+
+
+def test_state_memory_shopping_pass_routes_require_auth_and_owner_buddy_scope(tmp_path) -> None:
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+    owner_token = register(client, "shopping-owner@example.com")
+    other_token = register(client, "shopping-other@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    unauth = client.get(f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass")
+    cross_user_create = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items",
+        headers={"Authorization": f"Bearer {other_token}"},
+        json={"name": "牛奶"},
+    )
+
+    owner_create = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"name": "牛奶"},
+    )
+    shopping_item_id = owner_create.json()["item"]["shopping_item_id"]
+    cross_user_done = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/items/{shopping_item_id}/done",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert unauth.status_code == 401
+    assert cross_user_create.status_code == 404
+    assert cross_user_create.json() == {"detail": {"code": "buddy_not_found"}}
+    assert owner_create.status_code == 201
+    assert cross_user_done.status_code == 404
+    assert cross_user_done.json() == {"detail": {"code": "buddy_not_found"}}
+
+
 def test_state_memory_capture_routes_require_auth_and_scope_writes_to_buddy_owner(tmp_path) -> None:
     client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
     owner_token = register(client, "owner@example.com")

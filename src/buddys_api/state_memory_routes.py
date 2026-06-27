@@ -14,6 +14,7 @@ from buddys_api.state_memory_models import (
     StateMemoryQueryAnswer,
     StateMemoryQueryRequest,
     StateMemoryRecipeCreateRequest,
+    StateMemoryShoppingPassCreateRequest,
 )
 from buddys_api.state_memory_service import StateMemoryService
 from buddys_api.state_memory_store import StateMemoryStore
@@ -81,6 +82,173 @@ def list_state_memory_recipes(
             user_id=current_user.user_id,
             buddy_id=buddy_id,
         )
+    }
+
+
+@router.get("/shopping-pass")
+def list_state_memory_shopping_pass(
+    buddy_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    store = _state_memory_store(fastapi_request)
+    return {
+        "items": store.list_shopping_pass_items(user_id=current_user.user_id, buddy_id=buddy_id),
+        "summary": store.summarize_shopping_pass(user_id=current_user.user_id, buddy_id=buddy_id),
+    }
+
+
+@router.post("/shopping-pass/items", status_code=201)
+def create_state_memory_shopping_pass_item(
+    buddy_id: str,
+    request: StateMemoryShoppingPassCreateRequest,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    store = _state_memory_store(fastapi_request)
+    item = store.add_shopping_pass_item(
+        user_id=current_user.user_id,
+        buddy_id=buddy_id,
+        name=request.name,
+        source_kind="manual",
+        source_summary="Added manually from the shopping pass.",
+    )
+    revision = _append_shopping_pass_event(
+        fastapi_request,
+        actor_user_id=current_user.user_id,
+        buddy_id=buddy_id,
+        event_type="state_memory.shopping_pass_item_added",
+        payload_summary={
+            "shopping_item_id": item.shopping_item_id,
+            "name": item.name,
+            "source_kind": item.source_kind,
+            "status": item.status,
+        },
+    )
+    return {
+        "item": item,
+        "summary": store.summarize_shopping_pass(user_id=current_user.user_id, buddy_id=buddy_id),
+        "state_revision": revision,
+    }
+
+
+@router.post("/shopping-pass/promote-hint", status_code=201)
+def promote_state_memory_hint_to_shopping_pass(
+    buddy_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    store = _state_memory_store(fastapi_request)
+    hint = store.current_shopping_pass_hint(user_id=current_user.user_id, buddy_id=buddy_id)
+    if hint is None:
+        raise HTTPException(status_code=409, detail={"code": "shopping_pass_hint_unavailable"})
+    item_names = [str(name).strip() for name in (hint.get("basis") or {}).get("item_names", []) if str(name).strip()]
+    if not item_names:
+        raise HTTPException(status_code=409, detail={"code": "shopping_pass_hint_unavailable"})
+    item = store.add_shopping_pass_item(
+        user_id=current_user.user_id,
+        buddy_id=buddy_id,
+        name=item_names[0],
+        source_kind="proactive_hint",
+        source_summary=str(hint.get("message") or "Promoted current shopping hint."),
+    )
+    revision = _append_shopping_pass_event(
+        fastapi_request,
+        actor_user_id=current_user.user_id,
+        buddy_id=buddy_id,
+        event_type="state_memory.shopping_pass_hint_promoted",
+        payload_summary={
+            "shopping_item_id": item.shopping_item_id,
+            "name": item.name,
+            "source_kind": item.source_kind,
+        },
+    )
+    return {
+        "item": item,
+        "summary": store.summarize_shopping_pass(user_id=current_user.user_id, buddy_id=buddy_id),
+        "state_revision": revision,
+    }
+
+
+@router.post("/shopping-pass/promote-latest-query", status_code=201)
+def promote_state_memory_latest_query_to_shopping_pass(
+    buddy_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    latest_query = _latest_missing_recipe_query(
+        fastapi_request,
+        user_id=current_user.user_id,
+        buddy_id=buddy_id,
+    )
+    if latest_query is None:
+        raise HTTPException(status_code=409, detail={"code": "shopping_pass_latest_query_unavailable"})
+    store = _state_memory_store(fastapi_request)
+    items = [
+        store.add_shopping_pass_item(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            name=name,
+            source_kind="missing_for_recipe",
+            source_summary=f"Promoted missing recipe items from {latest_query['subject_name']}.",
+        )
+        for name in latest_query["missing_items"]
+    ]
+    revision = _append_shopping_pass_event(
+        fastapi_request,
+        actor_user_id=current_user.user_id,
+        buddy_id=buddy_id,
+        event_type="state_memory.shopping_pass_latest_query_promoted",
+        payload_summary={
+            "source_trace_id": latest_query["trace_id"],
+            "subject_name": latest_query["subject_name"],
+            "item_names": [item.name for item in items],
+            "count": len(items),
+        },
+    )
+    return {
+        "items": items,
+        "summary": store.summarize_shopping_pass(user_id=current_user.user_id, buddy_id=buddy_id),
+        "state_revision": revision,
+    }
+
+
+@router.post("/shopping-pass/items/{shopping_item_id}/done")
+def mark_state_memory_shopping_pass_item_done(
+    buddy_id: str,
+    shopping_item_id: str,
+    fastapi_request: Request,
+    current_user: Annotated[UserPublic, Depends(require_current_user)],
+) -> dict[str, object]:
+    _require_auth_buddy(fastapi_request, buddy_id=buddy_id, user_id=current_user.user_id)
+    store = _state_memory_store(fastapi_request)
+    try:
+        item = store.mark_shopping_pass_item_done(
+            user_id=current_user.user_id,
+            buddy_id=buddy_id,
+            shopping_item_id=shopping_item_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail={"code": "shopping_pass_item_not_found"}) from exc
+    revision = _append_shopping_pass_event(
+        fastapi_request,
+        actor_user_id=current_user.user_id,
+        buddy_id=buddy_id,
+        event_type="state_memory.shopping_pass_item_done",
+        payload_summary={
+            "shopping_item_id": item.shopping_item_id,
+            "name": item.name,
+            "status": item.status,
+        },
+    )
+    return {
+        "item": item,
+        "summary": store.summarize_shopping_pass(user_id=current_user.user_id, buddy_id=buddy_id),
+        "state_revision": revision,
     }
 
 
@@ -294,3 +462,45 @@ def _state_memory_service(request: Request) -> StateMemoryService:
 
 def _buddy_store(request: Request) -> BuddyStore:
     return request.app.state.buddy_store
+
+
+def _append_shopping_pass_event(
+    request: Request,
+    *,
+    actor_user_id: str,
+    buddy_id: str,
+    event_type: str,
+    payload_summary: dict[str, object],
+) -> int:
+    return request.app.state.sync_store.append_event(
+        event_type=event_type,
+        entity_type="state_memory_shopping_pass",
+        entity_id=buddy_id,
+        actor_user_id=actor_user_id,
+        visibility="auth",
+        payload_summary={"buddy_id": buddy_id, **payload_summary},
+    ).revision
+
+
+def _latest_missing_recipe_query(
+    request: Request,
+    *,
+    user_id: str,
+    buddy_id: str,
+) -> dict[str, object] | None:
+    traces = request.app.state.runtime.trace_store.list()
+    for trace in reversed(traces):
+        if trace.user_id != user_id or trace.buddy_id != buddy_id:
+            continue
+        if trace.intent.name != "state_memory_query" or trace.proposal.action_type != "reply_only":
+            continue
+        args = trace.proposal.args or {}
+        missing_items = [str(name).strip() for name in args.get("missing_items", []) if str(name).strip()]
+        if args.get("answer_type") != "missing_for_recipe" or not missing_items:
+            continue
+        return {
+            "trace_id": trace.trace_id,
+            "subject_name": args.get("subject_name") or trace.proposal.summary,
+            "missing_items": sorted(dict.fromkeys(missing_items)),
+        }
+    return None

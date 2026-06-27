@@ -373,6 +373,32 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS idx_state_memory_recipes_owner_name
             ON state_memory_recipes(user_id, buddy_id, normalized_name);
 
+        CREATE TABLE IF NOT EXISTS state_memory_shopping_pass_items (
+            shopping_item_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            buddy_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            normalized_name TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('open', 'done')),
+            source_kind TEXT NOT NULL CHECK (source_kind IN (
+                'manual',
+                'proactive_hint',
+                'missing_for_recipe'
+            )),
+            source_summary TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id),
+            FOREIGN KEY (buddy_id) REFERENCES buddies(buddy_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_state_memory_shopping_pass_owner
+            ON state_memory_shopping_pass_items(user_id, buddy_id, status, updated_at);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_state_memory_shopping_pass_open_name
+            ON state_memory_shopping_pass_items(user_id, buddy_id, normalized_name)
+            WHERE status = 'open';
+
         CREATE TABLE IF NOT EXISTS engagement_events (
             event_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,

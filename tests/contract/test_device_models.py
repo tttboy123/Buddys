@@ -92,6 +92,10 @@ def test_device_heartbeat_desired_state_event_and_outbox_export_shape() -> None:
                 "created_at": "2026-06-22T10:00:00+00:00",
             }
         ],
+        shopping_pass={
+            "open_count": 2,
+            "top_open_names": ["牛奶", "生抽"],
+        },
     )
     event = DeviceEvent(
         device_id="device_body_001",
@@ -117,6 +121,8 @@ def test_device_heartbeat_desired_state_event_and_outbox_export_shape() -> None:
     assert desired_state.state_memory.pending_proposal_count == 1
     assert desired_state.proactive_hint.kind == "consumption_inference"
     assert desired_state.recent_activity[0].kind == "capture_confirmed"
+    assert desired_state.shopping_pass.open_count == 2
+    assert desired_state.shopping_pass.top_open_names == ["牛奶", "生抽"]
     assert event.model_dump()["schema_version"] == "device_event.v1"
     assert event.event_type == "manual_done"
     assert outbox_event.model_dump()["schema_version"] == "sync_outbox_event.v1"

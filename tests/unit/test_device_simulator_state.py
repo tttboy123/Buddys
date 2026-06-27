@@ -86,6 +86,20 @@ def test_render_screen_includes_proactive_hint_and_recent_activity_summary() -> 
     assert "recent: 还有鸡蛋。" in screen
 
 
+def test_render_screen_includes_shopping_pass_summary_when_present() -> None:
+    screen = render_screen(
+        {
+            "state": "idle",
+            "shopping_pass": {
+                "open_count": 2,
+                "top_open_names": ["牛奶", "生抽"],
+            },
+        }
+    )
+
+    assert "shopping: 牛奶, 生抽" in screen
+
+
 def test_render_screen_includes_stale_sync_cue_from_desired_state_timestamp() -> None:
     screen = render_screen(
         {
