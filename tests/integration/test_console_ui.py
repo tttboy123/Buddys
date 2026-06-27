@@ -262,6 +262,24 @@ def test_console_assets_agent_creation_path_is_declared_in_console_js() -> None:
     assert "agentManagementNameInput" in render_agent_management_body
     assert "agentManagementActionStatus" in render_agent_management_body
     assert "Registered ${agentName}" in create_agent_body
+    
+
+def test_console_assets_agent_heartbeat_controls_declared_in_console_js() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    render_agent_management_body = extract_function_body(script, "renderAgentManagement")
+    send_agent_heartbeat_body = extract_function_body(script, "sendAgentHeartbeat")
+
+    assert "agentHeartbeatStatus" in render_agent_management_body
+    assert "agentHeartbeatVersion" in render_agent_management_body
+    assert "Send heartbeat" in render_agent_management_body
+    assert "AGENT_STATUSES" in render_agent_management_body
+    assert "/heartbeat" in send_agent_heartbeat_body
+    assert "requestJson(`/agents/${agentId}/heartbeat`" in send_agent_heartbeat_body
+    assert "statusSelect" in send_agent_heartbeat_body
+    assert "statusValue" in send_agent_heartbeat_body
+    assert "parseAgentHeartbeatVersion" in script
 
 
 def test_console_assets_render_latest_answer_as_user_altitude_transparency_copy() -> None:

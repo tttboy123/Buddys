@@ -58,6 +58,8 @@ const state = {
   },
 };
 
+const AGENT_STATUSES = ["starting", "online", "degraded", "offline", "error"];
+
 const $ = (id) => document.getElementById(id);
 
 function isAuthenticated() {
@@ -922,6 +924,56 @@ function renderAgentManagement() {
       }`;
       item.appendChild(extra);
 
+      const heartbeatSection = document.createElement("div");
+      heartbeatSection.className = "button-row";
+      heartbeatSection.style.gap = "8px";
+      heartbeatSection.style.alignItems = "end";
+
+      const heartbeatStatusField = document.createElement("label");
+      heartbeatStatusField.className = "field";
+      heartbeatStatusField.style.flex = "1";
+      const heartbeatStatusLabel = document.createElement("span");
+      heartbeatStatusLabel.textContent = "Status";
+      heartbeatStatusField.appendChild(heartbeatStatusLabel);
+      const heartbeatStatus = document.createElement("select");
+      heartbeatStatus.id = `agentHeartbeatStatus-${agent.agent_id}`;
+      heartbeatStatus.className = "agent-heartbeat-control";
+      AGENT_STATUSES.forEach((optionValue) => {
+        const option = document.createElement("option");
+        option.value = optionValue;
+        option.textContent = optionValue;
+        heartbeatStatus.appendChild(option);
+      });
+      heartbeatStatus.value = agent.status || "starting";
+      heartbeatStatusField.appendChild(heartbeatStatus);
+      heartbeatSection.appendChild(heartbeatStatusField);
+
+      const heartbeatVersionField = document.createElement("label");
+      heartbeatVersionField.className = "field";
+      heartbeatVersionField.style.flex = "1";
+      const heartbeatVersionLabel = document.createElement("span");
+      heartbeatVersionLabel.textContent = "Version";
+      heartbeatVersionField.appendChild(heartbeatVersionLabel);
+      const heartbeatVersion = document.createElement("input");
+      heartbeatVersion.id = `agentHeartbeatVersion-${agent.agent_id}`;
+      heartbeatVersion.className = "agent-heartbeat-control";
+      heartbeatVersion.type = "text";
+      heartbeatVersion.placeholder = "例如：v1.0.0";
+      heartbeatVersion.value = agent.version || "";
+      heartbeatVersionField.appendChild(heartbeatVersion);
+      heartbeatSection.appendChild(heartbeatVersionField);
+
+      const sendHeartbeatButton = document.createElement("button");
+      sendHeartbeatButton.className = "secondary-button";
+      sendHeartbeatButton.type = "button";
+      sendHeartbeatButton.textContent = "Send heartbeat";
+      sendHeartbeatButton.addEventListener("click", async () => {
+        await sendAgentHeartbeat(agent.agent_id);
+      });
+      heartbeatSection.appendChild(sendHeartbeatButton);
+
+      item.appendChild(heartbeatSection);
+
       list.appendChild(item);
     });
   }
@@ -963,6 +1015,56 @@ function renderAgentManagement() {
   }
 
   statusNode.textContent = `Agents: ${state.workspace.agents.length} · Agent machines: ${state.workspace.agentMachines.length}`;
+}
+
+function parseAgentHeartbeatVersion(versionValue) {
+  const trimmed = (versionValue || "").trim();
+  return trimmed ? trimmed : null;
+}
+
+async function sendAgentHeartbeat(agentId) {
+  if (!state.auth.user) {
+    $("agentManagementActionStatus").textContent = "Sign in to send heartbeat.";
+    return;
+  }
+
+  const statusNode = $("agentManagementActionStatus");
+  const statusSelect = $(`agentHeartbeatStatus-${agentId}`);
+  const versionInput = $(`agentHeartbeatVersion-${agentId}`);
+
+  if (!statusSelect) {
+    statusNode.textContent = "Heartbeat controls unavailable.";
+    return;
+  }
+
+  const statusValue = statusSelect.value;
+  const version = parseAgentHeartbeatVersion(versionInput?.value);
+  const currentAgent = state.workspace.agents.find((entry) => entry.agent_id === agentId);
+
+  if (!currentAgent) {
+    statusNode.textContent = "Agent not found.";
+    return;
+  }
+
+  statusNode.textContent = `Sending heartbeat for ${currentAgent.name || agentId}...`;
+
+  try {
+    await requestJson(`/agents/${agentId}/heartbeat`, {
+      method: "POST",
+      body: JSON.stringify({
+        status: statusValue,
+        version,
+        capabilities: currentAgent.capabilities || {},
+      }),
+    });
+    statusNode.textContent = `Heartbeat sent for ${currentAgent.name || agentId}.`;
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    statusNode.textContent = `Heartbeat failed: ${error.message}`;
+  }
 }
 
 async function createAgent() {
