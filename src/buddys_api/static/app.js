@@ -215,6 +215,7 @@ function clearSession() {
   $("authPasswordInput").value = "";
   $("authDisplayNameInput").value = "";
   $("authInviteCodeInput").value = "";
+  $("agentManagementActionStatus").textContent = "No agent registration yet.";
   $("deviceOwnerInstructionInput").value = "";
   renderExperienceShell();
 }
@@ -236,11 +237,15 @@ function syncAuthControls() {
   const hasPhoto = Boolean(state.ui.photo.base64);
   const hasVoiceTranscript = Boolean(state.ui.voice.transcript.trim());
   const hasDeviceInstruction = Boolean($("deviceOwnerInstructionInput")?.value.trim());
+  const hasAgentName = Boolean($("agentManagementNameInput")?.value.trim());
   $("authRegisterButton").disabled = signedIn;
   $("authLoginButton").disabled = signedIn;
   $("authLogoutButton").disabled = !signedIn;
   $("authBuddySelect").disabled = !signedIn || !state.workspace.buddies.length;
   $("createMyBuddyButton").disabled = !signedIn || hasBuddy;
+  $("agentManagementNameInput").disabled = !signedIn;
+  $("agentManagementRoleSelect").disabled = !signedIn;
+  $("createAgentButton").disabled = !signedIn || !hasAgentName;
   $("captureTextInput").disabled = !hasBuddy;
   $("captureSubmitButton").disabled = !hasBuddy;
   $("photoFileInput").disabled = !hasBuddy;
@@ -835,6 +840,11 @@ function renderAgentManagement() {
   const hasWorkspace = isAuthenticated();
   const hasAgents = Boolean(state.workspace.agents.length);
   const hasAgentMachines = Boolean(state.workspace.agentMachines.length);
+  const statusNode = $("agentManagementStatus");
+  const actionStatusNode = $("agentManagementActionStatus");
+  const list = $("agentManagementList");
+  const createButton = $("createAgentButton");
+  const hasAgentName = Boolean($("agentManagementNameInput")?.value.trim());
 
   if (!hasWorkspace) {
     renderTextList(
@@ -843,22 +853,35 @@ function renderAgentManagement() {
       "Sign in to inspect registered agents and agent machines.",
       (line) => line,
     );
-    $("agentManagementStatus").textContent = "Sign in to inspect registered agents and agent machines.";
+    statusNode.textContent = "Sign in to inspect registered agents and agent machines.";
+    actionStatusNode.textContent = "Sign in to manage agents.";
     return;
   }
 
-  const list = $("agentManagementList");
   list.replaceChildren();
+  actionStatusNode.textContent = "Agent registration controls are ready.";
+  if (createButton) {
+    createButton.disabled = !hasAgentName;
+  }
 
   if (!hasAgents && !hasAgentMachines) {
     const emptyItem = document.createElement("li");
     emptyItem.textContent = "No agents or agent machines are registered yet.";
     list.appendChild(emptyItem);
-    $("agentManagementStatus").textContent = "No agents or agent machines are registered yet.";
+    statusNode.textContent = "No agents or agent machines are registered yet.";
     return;
   }
 
   if (hasAgents) {
+    const sortedAgents = [...state.workspace.agents].sort((left, right) => {
+      const leftName = (left.name || "").toLowerCase();
+      const rightName = (right.name || "").toLowerCase();
+      if (leftName === rightName) {
+        return (left.role || "").localeCompare(right.role || "");
+      }
+      return leftName.localeCompare(rightName);
+    });
+
     const agentHeader = document.createElement("li");
     agentHeader.className = "proposal-card";
     const headerTitle = document.createElement("strong");
@@ -866,7 +889,7 @@ function renderAgentManagement() {
     agentHeader.appendChild(headerTitle);
     list.appendChild(agentHeader);
 
-    state.workspace.agents.forEach((agent) => {
+    sortedAgents.forEach((agent) => {
       const item = document.createElement("li");
       item.className = "proposal-card";
       const heading = document.createElement("strong");
@@ -889,6 +912,15 @@ function renderAgentManagement() {
       lastSeen.className = "support-copy";
       lastSeen.textContent = `Last seen: ${agent.last_seen || "never"}`;
       item.appendChild(lastSeen);
+
+      const metadataKeys = Object.keys(agent.metadata || {});
+      const capabilityKeys = Object.keys(agent.capabilities || {});
+      const extra = document.createElement("p");
+      extra.className = "support-copy";
+      extra.textContent = `Metadata: ${metadataKeys.length ? metadataKeys.join(", ") : "none"} · Capabilities: ${
+        capabilityKeys.length ? capabilityKeys.join(", ") : "none"
+      }`;
+      item.appendChild(extra);
 
       list.appendChild(item);
     });
@@ -930,7 +962,40 @@ function renderAgentManagement() {
     });
   }
 
-  $("agentManagementStatus").textContent = `Agents: ${state.workspace.agents.length} · Agent machines: ${state.workspace.agentMachines.length}`;
+  statusNode.textContent = `Agents: ${state.workspace.agents.length} · Agent machines: ${state.workspace.agentMachines.length}`;
+}
+
+async function createAgent() {
+  if (!state.auth.user) {
+    $("agentManagementActionStatus").textContent = "Sign in before registering an agent.";
+    return;
+  }
+  const agentName = $("agentManagementNameInput").value.trim();
+  const agentRole = $("agentManagementRoleSelect").value;
+  if (!agentName) {
+    $("agentManagementActionStatus").textContent = "Agent name is required.";
+    return;
+  }
+
+  $("agentManagementActionStatus").textContent = "Registering agent...";
+
+  try {
+    await requestJson("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: agentName,
+        role: agentRole,
+      }),
+    });
+    $("agentManagementNameInput").value = "";
+    $("agentManagementActionStatus").textContent = `Registered ${agentName}.`;
+    await refreshWorkspace();
+  } catch (error) {
+    if (isRecoveredSessionExpiry(error)) {
+      return;
+    }
+    $("agentManagementActionStatus").textContent = `Agent registration failed: ${error.message}`;
+  }
 }
 
 function renderExperienceShell() {
@@ -1453,6 +1518,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("authLoginButton").addEventListener("click", loginAuth);
   $("authLogoutButton").addEventListener("click", logoutAuth);
   $("createMyBuddyButton").addEventListener("click", createMyBuddy);
+  $("createAgentButton").addEventListener("click", createAgent);
+  $("agentManagementNameInput").addEventListener("input", syncAuthControls);
   $("authBuddySelect").addEventListener("change", () => {
     state.workspace.buddyId = $("authBuddySelect").value || null;
     loadSyncSnapshot().catch((error) => setWorkspaceStatus(`Buddy switch failed: ${error.message}`));

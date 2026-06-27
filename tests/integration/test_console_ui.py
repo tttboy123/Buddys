@@ -140,6 +140,11 @@ def test_console_html_exposes_user_transparency_surfaces_without_operator_panels
     assert 'id="agentManagementTitle"' in html
     assert 'id="agentManagementStatus"' in html
     assert 'id="agentManagementList"' in html
+    assert 'id="agentManagementNameInput"' in html
+    assert 'id="agentManagementRoleSelect"' in html
+    assert 'id="createAgentButton"' in html
+    assert 'id="agentManagementActionStatus"' in html
+    assert "Register agent" in html
     assert "Agent and machine workspace" in html
     assert "Provider settings" not in html
     assert "Cost governance" not in html
@@ -238,6 +243,25 @@ def test_console_assets_project_workspace_maps_agents_and_renders_agent_manageme
     assert "agentManagementStatus" in render_agent_management_body
     assert "state.workspace.agents.length" in render_agent_management_body
     assert "state.workspace.agentMachines.length" in render_agent_management_body
+    assert "agentManagementActionStatus" in render_agent_management_body
+
+
+def test_console_assets_agent_creation_path_is_declared_in_console_js() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    render_agent_management_body = extract_function_body(script, "renderAgentManagement")
+    create_agent_body = extract_function_body(script, "createAgent")
+
+    assert "agentManagementNameInput" in script
+    assert "agentManagementRoleSelect" in script
+    assert "/agents" in create_agent_body
+    assert "method: \"POST\"" in create_agent_body
+    assert "refreshWorkspace()" in create_agent_body
+    assert "createAgentButton" in render_agent_management_body
+    assert "agentManagementNameInput" in render_agent_management_body
+    assert "agentManagementActionStatus" in render_agent_management_body
+    assert "Registered ${agentName}" in create_agent_body
 
 
 def test_console_assets_render_latest_answer_as_user_altitude_transparency_copy() -> None:

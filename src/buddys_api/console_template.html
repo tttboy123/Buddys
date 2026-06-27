@@ -223,6 +223,27 @@
             Sign in to inspect registered agents and agent machines.
           </p>
         </div>
+        <div class="button-row" style="margin-bottom: 12px">
+          <label class="field">
+            <span>Agent name</span>
+            <input id="agentManagementNameInput" type="text" placeholder="例如：runtime-primary" />
+          </label>
+          <label class="field">
+            <span>Role</span>
+            <select id="agentManagementRoleSelect">
+              <option value="runtime">runtime</option>
+              <option value="hardware_simulator">hardware_simulator</option>
+              <option value="cost_agent">cost_agent</option>
+              <option value="verifier">verifier</option>
+              <option value="doc_progress">doc_progress</option>
+              <option value="adapter">adapter</option>
+            </select>
+          </label>
+        </div>
+        <div class="button-row">
+          <button id="createAgentButton" class="secondary-button" type="button" disabled>Register agent</button>
+        </div>
+        <p id="agentManagementActionStatus" class="support-copy">No agent registration yet.</p>
         <ul id="agentManagementList" class="state-list">
           <li>No agents or agent machines are registered yet.</li>
         </ul>
