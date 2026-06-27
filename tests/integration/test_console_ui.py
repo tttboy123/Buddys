@@ -271,14 +271,22 @@ def test_console_assets_agent_heartbeat_controls_declared_in_console_js() -> Non
     render_agent_management_body = extract_function_body(script, "renderAgentManagement")
     send_agent_heartbeat_body = extract_function_body(script, "sendAgentHeartbeat")
 
+    assert "HEARTBEAT_REQUESTS_IN_FLIGHT" in script
     assert "agentHeartbeatStatus" in render_agent_management_body
     assert "agentHeartbeatVersion" in render_agent_management_body
+    assert "agentHeartbeatSend" in render_agent_management_body
     assert "Send heartbeat" in render_agent_management_body
+    assert "Sending heartbeat..." in render_agent_management_body
     assert "AGENT_STATUSES" in render_agent_management_body
+    assert "heartbeatStatus.disabled = isHeartbeatInFlight;" in render_agent_management_body
+    assert "heartbeatVersion.disabled = isHeartbeatInFlight;" in render_agent_management_body
     assert "/heartbeat" in send_agent_heartbeat_body
     assert "requestJson(`/agents/${agentId}/heartbeat`" in send_agent_heartbeat_body
     assert "statusSelect" in send_agent_heartbeat_body
     assert "statusValue" in send_agent_heartbeat_body
+    assert "HEARTBEAT_REQUESTS_IN_FLIGHT.has(agentId)" in send_agent_heartbeat_body
+    assert "HEARTBEAT_REQUESTS_IN_FLIGHT.add(agentId)" in send_agent_heartbeat_body
+    assert "HEARTBEAT_REQUESTS_IN_FLIGHT.delete(agentId)" in send_agent_heartbeat_body
     assert "parseAgentHeartbeatVersion" in script
 
 

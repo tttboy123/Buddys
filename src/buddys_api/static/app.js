@@ -59,6 +59,7 @@ const state = {
 };
 
 const AGENT_STATUSES = ["starting", "online", "degraded", "offline", "error"];
+const HEARTBEAT_REQUESTS_IN_FLIGHT = new Set();
 
 const $ = (id) => document.getElementById(id);
 
@@ -964,9 +965,14 @@ function renderAgentManagement() {
       heartbeatSection.appendChild(heartbeatVersionField);
 
       const sendHeartbeatButton = document.createElement("button");
+      sendHeartbeatButton.id = `agentHeartbeatSend-${agent.agent_id}`;
       sendHeartbeatButton.className = "secondary-button";
       sendHeartbeatButton.type = "button";
-      sendHeartbeatButton.textContent = "Send heartbeat";
+      const isHeartbeatInFlight = HEARTBEAT_REQUESTS_IN_FLIGHT.has(agent.agent_id);
+      sendHeartbeatButton.disabled = isHeartbeatInFlight;
+      sendHeartbeatButton.textContent = isHeartbeatInFlight ? "Sending heartbeat..." : "Send heartbeat";
+      heartbeatStatus.disabled = isHeartbeatInFlight;
+      heartbeatVersion.disabled = isHeartbeatInFlight;
       sendHeartbeatButton.addEventListener("click", async () => {
         await sendAgentHeartbeat(agent.agent_id);
       });
@@ -1031,9 +1037,22 @@ async function sendAgentHeartbeat(agentId) {
   const statusNode = $("agentManagementActionStatus");
   const statusSelect = $(`agentHeartbeatStatus-${agentId}`);
   const versionInput = $(`agentHeartbeatVersion-${agentId}`);
+  const heartbeatButton = $(`agentHeartbeatSend-${agentId}`);
 
   if (!statusSelect) {
     statusNode.textContent = "Heartbeat controls unavailable.";
+    return;
+  }
+  if (!heartbeatButton) {
+    statusNode.textContent = "Heartbeat controls unavailable.";
+    return;
+  }
+  if (!versionInput) {
+    statusNode.textContent = "Heartbeat controls unavailable.";
+    return;
+  }
+  if (HEARTBEAT_REQUESTS_IN_FLIGHT.has(agentId)) {
+    statusNode.textContent = "Heartbeat send already in progress.";
     return;
   }
 
@@ -1047,6 +1066,11 @@ async function sendAgentHeartbeat(agentId) {
   }
 
   statusNode.textContent = `Sending heartbeat for ${currentAgent.name || agentId}...`;
+  HEARTBEAT_REQUESTS_IN_FLIGHT.add(agentId);
+  statusSelect.disabled = true;
+  versionInput.disabled = true;
+  heartbeatButton.disabled = true;
+  heartbeatButton.textContent = "Sending heartbeat...";
 
   try {
     await requestJson(`/agents/${agentId}/heartbeat`, {
@@ -1064,6 +1088,18 @@ async function sendAgentHeartbeat(agentId) {
       return;
     }
     statusNode.textContent = `Heartbeat failed: ${error.message}`;
+  } finally {
+    HEARTBEAT_REQUESTS_IN_FLIGHT.delete(agentId);
+    if (statusSelect) {
+      statusSelect.disabled = false;
+    }
+    if (versionInput) {
+      versionInput.disabled = false;
+    }
+    if (heartbeatButton) {
+      heartbeatButton.disabled = false;
+      heartbeatButton.textContent = "Send heartbeat";
+    }
   }
 }
 
