@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from buddys_api.auth_models import AuthResponse, LoginRequest, RegisterRequest, UserPublic
 from buddys_api.auth_store import AuthStore, DuplicateEmailError, InvalidCredentialsError
 from buddys_api.buddy_store import BuddyStore
+from buddys_api.founder_metrics_policy import founder_metrics_allowed
 from buddys_api.schemas import Buddy
 
 
@@ -33,7 +34,10 @@ def register(request: RegisterRequest, fastapi_request: Request) -> AuthResponse
     except DuplicateEmailError as exc:
         raise HTTPException(status_code=409, detail={"code": "email_already_registered"}) from exc
     auth_result = store.issue_session(user)
-    return AuthResponse(user=auth_result.user, access_token=auth_result.access_token)
+    return AuthResponse(
+        user=_user_with_founder_metrics_capability(auth_result.user),
+        access_token=auth_result.access_token,
+    )
 
 
 @router.post("/auth/login", response_model=AuthResponse)
@@ -42,12 +46,15 @@ def login(request: LoginRequest, fastapi_request: Request) -> AuthResponse:
         auth_result = _auth_store(fastapi_request).login(email=request.email, password=request.password)
     except InvalidCredentialsError as exc:
         raise HTTPException(status_code=401, detail={"code": "invalid_credentials"}) from exc
-    return AuthResponse(user=auth_result.user, access_token=auth_result.access_token)
+    return AuthResponse(
+        user=_user_with_founder_metrics_capability(auth_result.user),
+        access_token=auth_result.access_token,
+    )
 
 
 @router.get("/auth/me", response_model=UserPublic)
 def me(current_user: Annotated[UserPublic, Depends(require_current_user)]) -> UserPublic:
-    return current_user
+    return _user_with_founder_metrics_capability(current_user)
 
 
 @router.post("/auth/logout", status_code=204)
@@ -116,7 +123,7 @@ def require_current_user(
     user = _auth_store(fastapi_request).authenticate_token(token)
     if user is None:
         raise HTTPException(status_code=401, detail={"code": "invalid_or_expired_token"})
-    return user
+    return _user_with_founder_metrics_capability(user)
 
 
 def _auth_store(request: Request) -> AuthStore:
@@ -144,3 +151,7 @@ def _require_valid_invite_code(invite_code: str | None) -> None:
         raise HTTPException(status_code=403, detail={"code": "invite_required"})
     if invite_code != required_code:
         raise HTTPException(status_code=403, detail={"code": "invite_invalid"})
+
+
+def _user_with_founder_metrics_capability(user: UserPublic) -> UserPublic:
+    return user.model_copy(update={"founder_metrics_allowed": founder_metrics_allowed(user.email)})

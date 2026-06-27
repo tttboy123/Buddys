@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from buddys_api.main import create_app
@@ -92,6 +94,62 @@ def test_login_rejects_invalid_credentials_without_revealing_which_field_failed(
     assert missing_user.status_code == 401
     assert wrong_password.json() == {"detail": {"code": "invalid_credentials"}}
     assert missing_user.json() == {"detail": {"code": "invalid_credentials"}}
+
+
+def test_auth_user_payload_exposes_founder_metrics_capability_for_founder_only(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("BUDDYS_FOUNDER_METRICS_EMAIL_ALLOWLIST", "founder@example.com")
+    client = TestClient(create_app(db_path=tmp_path / "buddys.sqlite3"))
+
+    founder_register = client.post(
+        "/auth/register",
+        json={"email": "founder@example.com", "password": "correct horse battery staple"},
+    )
+    member_register = client.post(
+        "/auth/register",
+        json={"email": "member@example.com", "password": "correct horse battery staple"},
+    )
+    founder_login = client.post(
+        "/auth/login",
+        json={"email": "founder@example.com", "password": "correct horse battery staple"},
+    )
+    member_login = client.post(
+        "/auth/login",
+        json={"email": "member@example.com", "password": "correct horse battery staple"},
+    )
+
+    assert founder_register.status_code == 201
+    assert founder_register.json()["user"]["founder_metrics_allowed"] is True
+    assert member_register.status_code == 201
+    assert member_register.json()["user"]["founder_metrics_allowed"] is False
+    assert founder_login.status_code == 200
+    assert founder_login.json()["user"]["founder_metrics_allowed"] is True
+    assert member_login.status_code == 200
+    assert member_login.json()["user"]["founder_metrics_allowed"] is False
+
+    founder_me = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {founder_login.json()['access_token']}"},
+    )
+    member_me = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {member_login.json()['access_token']}"},
+    )
+
+    assert founder_me.status_code == 200
+    assert founder_me.json()["founder_metrics_allowed"] is True
+    assert member_me.status_code == 200
+    assert member_me.json()["founder_metrics_allowed"] is False
+
+
+def test_founder_metrics_allowlist_policy_is_centralized_away_from_route_modules() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    auth_routes_source = (repo_root / "src/buddys_api/auth_routes.py").read_text()
+    metrics_routes_source = (repo_root / "src/buddys_api/engagement_metrics_routes.py").read_text()
+
+    assert "from buddys_api.founder_metrics_policy import founder_metrics_allowed" in auth_routes_source
+    assert "from buddys_api.founder_metrics_policy import founder_metrics_allowed" in metrics_routes_source
+    assert "BUDDYS_FOUNDER_METRICS_EMAIL_ALLOWLIST" not in auth_routes_source
+    assert "BUDDYS_FOUNDER_METRICS_EMAIL_ALLOWLIST" not in metrics_routes_source
 
 
 def test_auth_buddy_routes_are_user_scoped(tmp_path) -> None:

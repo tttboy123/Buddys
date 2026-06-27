@@ -379,14 +379,100 @@ def test_console_assets_manage_founder_metrics_state_and_hide_panel_for_non_foun
     assert "state.workspace.retentionSummary = null;" in clear_session_body
     assert "state.workspace.founderMetricsVisible = false;" in clear_session_body
     assert "state.workspace.founderMetricsUnavailableReason = null;" in clear_session_body
-    assert 'detailCode === "founder_metrics_forbidden"' in load_founder_metrics_body
+    assert "state.auth.user?.founder_metrics_allowed" in load_founder_metrics_body
     assert "state.workspace.founderMetricsVisible = false;" in load_founder_metrics_body
     assert "state.workspace.founderMetricsUnavailableReason" in load_founder_metrics_body
+    founder_gate_index = load_founder_metrics_body.index("state.auth.user?.founder_metrics_allowed")
+    retention_fetch_index = load_founder_metrics_body.index('requestJson("/metrics/retention-summary"')
+    assert founder_gate_index < retention_fetch_index
     assert "const requestGeneration = ++state.ui.founderMetricsRequestGeneration;" in load_founder_metrics_body
     assert "const requestSessionToken = state.auth.accessToken;" in load_founder_metrics_body
     assert "requestGeneration !== state.ui.founderMetricsRequestGeneration" in load_founder_metrics_body
     assert "requestSessionToken !== state.auth.accessToken" in load_founder_metrics_body
     assert "$(\"founderMetricsPanel\").hidden" in render_founder_metrics_body
+
+
+def test_console_assets_load_founder_metrics_skips_retention_request_for_ordinary_users_but_allows_founders() -> None:
+    client = make_client()
+
+    script = client.get("/static/app.js").text
+    load_founder_metrics_body = extract_function_body(script, "loadFounderMetrics")
+    node_output = run_node(
+        f"""
+        async function exercise(founderAllowed) {{
+          const requestLog = [];
+          const renderLog = [];
+          const state = {{
+            auth: {{
+              accessToken: "token-123",
+              user: {{ founder_metrics_allowed: founderAllowed }},
+            }},
+            workspace: {{
+              engagementMetrics: {{ stale: true }},
+              retentionSummary: {{ stale: true }},
+              founderMetricsVisible: true,
+              founderMetricsUnavailableReason: "stale",
+            }},
+            ui: {{
+              founderMetricsRequestGeneration: 0,
+            }},
+          }};
+          function isAuthenticated() {{
+            return Boolean(state.auth.accessToken);
+          }}
+          function renderFounderMetrics() {{
+            renderLog.push({{
+              founderMetricsVisible: state.workspace.founderMetricsVisible,
+              founderMetricsUnavailableReason: state.workspace.founderMetricsUnavailableReason,
+            }});
+          }}
+          function isRecoveredSessionExpiry() {{
+            return false;
+          }}
+          async function requestJson(path) {{
+            requestLog.push(path);
+            if (path === "/metrics/retention-summary") {{
+              return {{ activation: {{}}, retention: {{ capture_by_source: {{}} }} }};
+            }}
+            if (path === "/metrics/engagement") {{
+              return {{ events: [] }};
+            }}
+            throw new Error(`unexpected path: ${{path}}`);
+          }}
+          async function loadFounderMetrics() {{{load_founder_metrics_body}}}
+          await loadFounderMetrics();
+          return {{
+            founderAllowed,
+            requestLog,
+            renderLog,
+            requestGeneration: state.ui.founderMetricsRequestGeneration,
+            founderMetricsVisible: state.workspace.founderMetricsVisible,
+            engagementMetrics: state.workspace.engagementMetrics,
+            retentionSummary: state.workspace.retentionSummary,
+            founderMetricsUnavailableReason: state.workspace.founderMetricsUnavailableReason,
+          }};
+        }}
+
+        const ordinary = await exercise(false);
+        const founder = await exercise(true);
+        console.log(JSON.stringify({{ ordinary, founder }}));
+        """
+    )
+
+    rendered = json.loads(node_output)
+    assert rendered["ordinary"]["requestLog"] == []
+    assert rendered["ordinary"]["requestGeneration"] == 0
+    assert rendered["ordinary"]["founderMetricsVisible"] is False
+    assert rendered["ordinary"]["engagementMetrics"] is None
+    assert rendered["ordinary"]["retentionSummary"] is None
+    assert rendered["ordinary"]["founderMetricsUnavailableReason"] is None
+
+    assert rendered["founder"]["requestLog"] == ["/metrics/retention-summary", "/metrics/engagement"]
+    assert rendered["founder"]["requestGeneration"] == 1
+    assert rendered["founder"]["founderMetricsVisible"] is True
+    assert rendered["founder"]["engagementMetrics"] == {"events": []}
+    assert rendered["founder"]["retentionSummary"] == {"activation": {}, "retention": {"capture_by_source": {}}}
+    assert rendered["founder"]["founderMetricsUnavailableReason"] is None
 
 
 def test_console_assets_project_and_publish_device_workspace_from_auth_snapshot() -> None:

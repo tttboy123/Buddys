@@ -1516,6 +1516,14 @@ async function loadFounderMetrics() {
     renderFounderMetrics();
     return;
   }
+  if (!state.auth.user?.founder_metrics_allowed) {
+    state.workspace.engagementMetrics = null;
+    state.workspace.retentionSummary = null;
+    state.workspace.founderMetricsVisible = false;
+    state.workspace.founderMetricsUnavailableReason = null;
+    renderFounderMetrics();
+    return;
+  }
 
   const requestGeneration = ++state.ui.founderMetricsRequestGeneration;
   const requestSessionToken = state.auth.accessToken;
@@ -1545,16 +1553,10 @@ async function loadFounderMetrics() {
     ) {
       return;
     }
-    const detailCode = error.payload?.detail?.code;
     state.workspace.engagementMetrics = null;
     state.workspace.retentionSummary = null;
-    if (error.status === 403 && detailCode === "founder_metrics_forbidden") {
-      state.workspace.founderMetricsVisible = false;
-      state.workspace.founderMetricsUnavailableReason = null;
-    } else {
-      state.workspace.founderMetricsVisible = true;
-      state.workspace.founderMetricsUnavailableReason = error.message;
-    }
+    state.workspace.founderMetricsVisible = true;
+    state.workspace.founderMetricsUnavailableReason = error.message;
   }
   renderFounderMetrics();
 }

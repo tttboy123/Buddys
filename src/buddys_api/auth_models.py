@@ -8,6 +8,7 @@ class UserPublic(BaseModel):
     email: str
     display_name: str | None = None
     created_at: str
+    founder_metrics_allowed: bool = False
 
 
 class SessionPublic(BaseModel):
