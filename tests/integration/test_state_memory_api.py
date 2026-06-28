@@ -205,7 +205,7 @@ def test_state_memory_shopping_pass_promote_hint_returns_409_when_no_current_hin
     assert response.status_code == 409
     body = response.json()
     assert body["detail"]["code"] == "shopping_pass_hint_unavailable"
-    assert body["detail"]["message"]
+    assert body["detail"]["message"] == "当前暂无可复用的购物建议，请先继续提问或采集后再试一次。"
 
 
 def test_state_memory_shopping_pass_promote_hint_returns_409_when_item_names_empty(tmp_path, monkeypatch) -> None:
@@ -239,7 +239,7 @@ def test_state_memory_shopping_pass_promote_hint_returns_409_when_item_names_emp
     assert response.status_code == 409
     body = response.json()
     assert body["detail"]["code"] == "shopping_pass_hint_unavailable"
-    assert body["detail"]["message"]
+    assert body["detail"]["message"] == "当前提示缺少可直接加入的商品名，请先补充更明确的条目级提示再试。"
 
 
 def test_state_memory_shopping_pass_promote_latest_query_uses_missing_recipe_answer_and_dedupes_open_items(
@@ -337,7 +337,7 @@ def test_state_memory_shopping_pass_promote_latest_query_returns_409_without_mis
     assert response.status_code == 409
     body = response.json()
     assert body["detail"]["code"] == "shopping_pass_latest_query_unavailable"
-    assert body["detail"]["message"]
+    assert body["detail"]["message"] == "你最近一次提问暂未产出可转入购物清单的缺口。"
 
 
 def test_state_memory_shopping_pass_routes_require_auth_and_owner_buddy_scope(tmp_path) -> None:

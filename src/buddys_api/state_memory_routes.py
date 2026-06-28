@@ -148,7 +148,7 @@ def promote_state_memory_hint_to_shopping_pass(
             status_code=409,
             detail={
                 "code": "shopping_pass_hint_unavailable",
-                "message": "No proactive hint is available right now. Ask or capture again, then try promoting again.",
+                "message": "当前暂无可复用的购物建议，请先继续提问或采集后再试一次。",
             },
         )
     item_names = [str(name).strip() for name in (hint.get("basis") or {}).get("item_names", []) if str(name).strip()]
@@ -157,7 +157,7 @@ def promote_state_memory_hint_to_shopping_pass(
             status_code=409,
             detail={
                 "code": "shopping_pass_hint_unavailable",
-                "message": "Current hint has no candidate item names. Capture an item-level hint before promoting.",
+                "message": "当前提示缺少可直接加入的商品名，请先补充更明确的条目级提示再试。",
             },
         )
     item = store.add_shopping_pass_item(
@@ -202,7 +202,7 @@ def promote_state_memory_latest_query_to_shopping_pass(
             status_code=409,
             detail={
                 "code": "shopping_pass_latest_query_unavailable",
-                "message": "No missing ingredients from your latest query can be promoted yet.",
+                "message": "你最近一次提问暂未产出可转入购物清单的缺口。",
             },
         )
     store = _state_memory_store(fastapi_request)
