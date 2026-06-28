@@ -3,9 +3,24 @@
 from __future__ import annotations
 
 import statistics
+import json
+import csv
 import time
 from datetime import datetime, timedelta
 import argparse
+
+
+CSV_FIELDS = (
+    "records",
+    "buddy_count",
+    "samples",
+    "limit",
+    "buddy",
+    "median_sec",
+    "p95_sec",
+    "min_sec",
+    "max_sec",
+)
 
 from buddys_api.db import connect_db, initialize_database
 from buddys_api.schemas import ActionProposal, ActionTrace, Intent, PermissionDecision
@@ -19,6 +34,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--limit", type=int, default=200)
     parser.add_argument("--target-buddy", default="buddy_10")
+    parser.add_argument("--output-json", action="store_true", help="Emit benchmark summary as JSON")
+    parser.add_argument("--json-file", default=None, help="Optional JSON output path")
+    parser.add_argument("--output-csv", action="store_true", help="Emit benchmark summary as CSV")
+    parser.add_argument("--csv-file", default=None, help="Optional CSV output path")
     return parser.parse_args()
 
 
@@ -112,6 +131,39 @@ def main() -> None:
     print(f"p95_sec={results['p95_sec']:.6f}")
     print(f"min_sec={results['min_sec']:.6f}")
     print(f"max_sec={results['max_sec']:.6f}")
+
+    if args.output_json or args.json_file:
+        json_output = json.dumps(results)
+        if args.output_json:
+            print(f"json={json_output}")
+        if args.json_file:
+            with open(args.json_file, "w", encoding="utf-8") as f:
+                f.write(json_output)
+
+    if args.output_csv or args.csv_file:
+        csv_rows = [str(results[field]) for field in CSV_FIELDS]
+        if args.output_csv:
+            print("csv=" + ",".join(CSV_FIELDS))
+            print(
+                ",".join(
+                    [
+                        f"{results['records']}",
+                        f"{results['buddy_count']}",
+                        f"{results['samples']}",
+                        f"{results['limit']}",
+                        results["buddy"],
+                        f"{results['median_sec']:.6f}",
+                        f"{results['p95_sec']:.6f}",
+                        f"{results['min_sec']:.6f}",
+                        f"{results['max_sec']:.6f}",
+                    ]
+                )
+            )
+        if args.csv_file:
+            with open(args.csv_file, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(CSV_FIELDS)
+                writer.writerow(csv_rows)
 
 
 if __name__ == "__main__":
