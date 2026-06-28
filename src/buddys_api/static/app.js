@@ -1,5 +1,5 @@
 const SESSION_STORAGE_KEY = "buddysAccessToken";
-const VOICE_UNSUPPORTED_COPY = "当前浏览器暂不支持语音采集。";
+const VOICE_UNSUPPORTED_COPY = "Voice capture is not available in this browser. 当前浏览器暂不支持语音采集。";
 const UNRECOGNIZED_COPY = "我听到了内容，但还没法完整结构化。";
 const DEFAULT_CAPTURE_EMPTY = "暂未有已确认库存。";
 const DEFAULT_PENDING_EMPTY = "暂无待确认提案。";
@@ -174,6 +174,27 @@ function selectedBuddy() {
   return state.workspace.buddies.find((buddy) => buddy.buddy_id === state.workspace.buddyId) || null;
 }
 
+function derivePrimaryActionHint() {
+  if (!isAuthenticated()) {
+    return "先登录，创建并选择 Buddy，再开始录入状态。";
+  }
+
+  const buddy = selectedBuddy();
+  if (!buddy) {
+    return "请先创建 Buddy，让它代你管理本地库存。";
+  }
+
+  if (state.workspace.pendingProposals.length > 0) {
+    return "先处理待审核提案，再继续新的查询，否则可能重复报账。";
+  }
+
+  if (state.workspace.confirmedItems.length === 0) {
+    return "先用文字、语音或拍照录入一次状态，然后再进入提案复核。";
+  }
+
+  return "建议先查询‘还有哪些还没买到’并核对证据来源，再补齐 shopping pass。";
+}
+
 function selectedProposal() {
   return (
     state.workspace.pendingProposals.find((proposal) => proposal.proposal_id === state.ui.selectedProposalId) || null
@@ -331,14 +352,17 @@ function renderBuddyHero() {
     $("overviewTitle").textContent = "我的 Buddy";
     $("buddySpace").textContent = "家庭";
     $("buddyState").textContent = isAuthenticated() ? "待初始化" : "未登录";
+    $("primaryActionHint").textContent = isAuthenticated() ? "请先创建 Buddy，开启状态记忆闭环。" : "先登录后再创建 Buddy。";
     return;
   }
+
   $("buddyGreeting").textContent = `你好，我在替你看管 ${buddy.space_id}。`;
   $("buddyNameHeading").textContent = buddy.name;
   $("buddySummaryLine").textContent = "先录入状态，再复核一次，随后提问可给出证据依据。";
   $("overviewTitle").textContent = buddy.name;
   $("buddySpace").textContent = buddy.space_id;
   $("buddyState").textContent = buddy.status;
+  $("primaryActionHint").textContent = derivePrimaryActionHint();
 }
 
 function renderConfirmedState() {

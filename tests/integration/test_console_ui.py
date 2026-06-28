@@ -131,6 +131,21 @@ def test_console_html_contains_auth_workspace_and_state_memory_controls() -> Non
     assert "Why this answer / details" in html
 
 
+def test_console_html_exposes_primary_action_hint_and_main_path_order() -> None:
+    html = make_client().get("/console").text
+
+    assert 'id="primaryActionHint"' in html
+
+    auth_idx = html.index('id="authRail"')
+    hero_idx = html.index('id="buddyHero"')
+    confirmed_idx = html.index('id="confirmedStatePanel"')
+    capture_idx = html.index('id="captureComposer"')
+    proposal_idx = html.index('id="proposalInbox"')
+    query_idx = html.index('id="queryComposer"')
+
+    assert auth_idx < hero_idx < confirmed_idx < capture_idx < proposal_idx < query_idx
+
+
 def test_console_html_wraps_auth_password_field_and_actions_in_a_real_form() -> None:
     client = make_client()
 
@@ -847,10 +862,73 @@ def test_console_styles_define_single_column_mobile_first_experience_shell() -> 
     css = client.get("/static/styles.css").text
 
     assert "#experienceShell" in css
-    assert "max-width: 480px" in css
+    assert "max-width: 390px" in css
     assert "position: sticky" in css
     assert ".details-drawer" in css
     assert ".coming-soon-chip" in css
+
+
+def test_console_js_buddy_primary_action_hint_guides_next_steps() -> None:
+    script = make_client().get("/static/app.js").text
+    derive_hint_body = extract_function_body(script, "derivePrimaryActionHint")
+
+    assert "function derivePrimaryActionHint" in script
+    assert 'state.workspace.pendingProposals.length > 0' in derive_hint_body
+    assert 'state.workspace.confirmedItems.length === 0' in derive_hint_body
+
+    node_script = (
+        "function derivePrimaryActionHint() {\n"
+        f"{derive_hint_body}\n"
+        "}\n\n"
+        "function isAuthenticated() {\n"
+        "  return Boolean(state.auth.accessToken && state.auth.user);\n"
+        "}\n\n"
+        "function selectedBuddy() {\n"
+        "  return state.workspace.buddies.find((buddy) => buddy.buddy_id === state.workspace.buddyId) || null;\n"
+        "}\n\n"
+        "let state = {\n"
+        "  auth: {\n"
+        "    accessToken: null,\n"
+        "    user: null,\n"
+        "  },\n"
+        "  workspace: {\n"
+        "    buddyId: null,\n"
+        "    buddies: [{ buddy_id: \"b1\", name: \"My Buddy\", space_id: \"home\" }],\n"
+        "    pendingProposals: [],\n"
+        "    confirmedItems: [],\n"
+        "  },\n"
+        "};\n\n"
+        "const signedOut = derivePrimaryActionHint();\n\n"
+        "state.auth.accessToken = \"token\";\n"
+        "state.auth.user = { email: \"u@example.com\" };\n"
+        "const noBuddy = derivePrimaryActionHint();\n\n"
+        "state.workspace.buddyId = \"b1\";\n"
+        "state.workspace.pendingProposals = [{ proposal_id: \"p1\" }];\n"
+        "const pending = derivePrimaryActionHint();\n\n"
+        "state.workspace.pendingProposals = [];\n"
+        "state.workspace.confirmedItems = [];\n"
+        "const needsCapture = derivePrimaryActionHint();\n\n"
+        "state.workspace.confirmedItems = [{ name: \"鸡蛋\" }];\n"
+        "const readyForQuery = derivePrimaryActionHint();\n\n"
+        "console.log(\n"
+        "  JSON.stringify({\n"
+        "    signedOut,\n"
+        "    noBuddy,\n"
+        "    pending,\n"
+        "    needsCapture,\n"
+        "    readyForQuery,\n"
+        "  }),\n"
+        ");\n"
+    )
+    node_output = run_node(node_script)
+
+    rendered = json.loads(node_output)
+
+    assert "先登录" in rendered["signedOut"]
+    assert "创建 Buddy" in rendered["noBuddy"]
+    assert "待审核提案" in rendered["pending"]
+    assert "先用文字、语音或拍照录入一次状态" in rendered["needsCapture"]
+    assert "建议先查询" in rendered["readyForQuery"]
 
 
 def test_console_styles_remove_hardware_square_and_legacy_tri_surface_constraints() -> None:

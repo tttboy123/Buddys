@@ -8,7 +8,8 @@
   </head>
   <body>
     <main id="experienceShell">
-      <section id="authRail" class="experience-panel" aria-labelledby="authWorkspaceTitle">
+      <div class="command-center">
+        <section id="authRail" class="experience-panel auth-panel" aria-labelledby="authWorkspaceTitle">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Buddys</p>
@@ -61,6 +62,7 @@
         <p id="buddySummaryLine" class="support-copy">
           Tell Buddy what you bought or used, then ask what is still at home.
         </p>
+        <p id="primaryActionHint" class="primary-action-copy support-copy"></p>
         <div class="hero-meta">
           <div>
             <span class="field-label">Space</span>
@@ -399,8 +401,9 @@
             </section>
           </div>
         </details>
-      </section>
+      </div>
 
+      <aside class="observability-rail" aria-label="观测面板与透明度">
       <section id="founderMetricsPanel" class="experience-panel founder-panel" aria-labelledby="founderMetricsTitle" hidden>
         <div class="section-heading">
           <div>
@@ -470,6 +473,7 @@
           </button>
         </div>
       </section>
+      </aside>
     </main>
     <script>
       window.BUDDYS_BOOTSTRAP = __BUDDYS_BOOTSTRAP__;
