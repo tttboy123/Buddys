@@ -203,7 +203,43 @@ def test_state_memory_shopping_pass_promote_hint_returns_409_when_no_current_hin
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": {"code": "shopping_pass_hint_unavailable"}}
+    body = response.json()
+    assert body["detail"]["code"] == "shopping_pass_hint_unavailable"
+    assert body["detail"]["message"]
+
+
+def test_state_memory_shopping_pass_promote_hint_returns_409_when_item_names_empty(tmp_path, monkeypatch) -> None:
+    app = create_app(db_path=tmp_path / "buddys.sqlite3")
+    client = TestClient(app)
+    token = register(client, "hint-empty-items@example.com")
+    buddy = client.post(
+        "/me/buddies",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Kitchen Buddy", "space_id": "kitchen"},
+    ).json()
+
+    def _empty_items_hint(**_kwargs: object) -> dict[str, object]:
+        return {
+            "kind": "consumption_inference",
+            "message": "当前提示缺少可复用条目名，请重新采集。",
+            "basis": {"item_names": []},
+        }
+
+    monkeypatch.setattr(
+        app.state.state_memory_store,
+        "current_shopping_pass_hint",
+        _empty_items_hint,
+    )
+
+    response = client.post(
+        f"/me/buddies/{buddy['buddy_id']}/state-memory/shopping-pass/promote-hint",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"]["code"] == "shopping_pass_hint_unavailable"
+    assert body["detail"]["message"]
 
 
 def test_state_memory_shopping_pass_promote_latest_query_uses_missing_recipe_answer_and_dedupes_open_items(
@@ -299,7 +335,9 @@ def test_state_memory_shopping_pass_promote_latest_query_returns_409_without_mis
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": {"code": "shopping_pass_latest_query_unavailable"}}
+    body = response.json()
+    assert body["detail"]["code"] == "shopping_pass_latest_query_unavailable"
+    assert body["detail"]["message"]
 
 
 def test_state_memory_shopping_pass_routes_require_auth_and_owner_buddy_scope(tmp_path) -> None:

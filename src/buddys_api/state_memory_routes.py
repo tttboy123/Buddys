@@ -144,10 +144,22 @@ def promote_state_memory_hint_to_shopping_pass(
     store = _state_memory_store(fastapi_request)
     hint = store.current_shopping_pass_hint(user_id=current_user.user_id, buddy_id=buddy_id)
     if hint is None:
-        raise HTTPException(status_code=409, detail={"code": "shopping_pass_hint_unavailable"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "shopping_pass_hint_unavailable",
+                "message": "No proactive hint is available right now. Ask or capture again, then try promoting again.",
+            },
+        )
     item_names = [str(name).strip() for name in (hint.get("basis") or {}).get("item_names", []) if str(name).strip()]
     if not item_names:
-        raise HTTPException(status_code=409, detail={"code": "shopping_pass_hint_unavailable"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "shopping_pass_hint_unavailable",
+                "message": "Current hint has no candidate item names. Capture an item-level hint before promoting.",
+            },
+        )
     item = store.add_shopping_pass_item(
         user_id=current_user.user_id,
         buddy_id=buddy_id,
@@ -186,7 +198,13 @@ def promote_state_memory_latest_query_to_shopping_pass(
         buddy_id=buddy_id,
     )
     if latest_query is None:
-        raise HTTPException(status_code=409, detail={"code": "shopping_pass_latest_query_unavailable"})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "shopping_pass_latest_query_unavailable",
+                "message": "No missing ingredients from your latest query can be promoted yet.",
+            },
+        )
     store = _state_memory_store(fastapi_request)
     items = [
         store.add_shopping_pass_item(
