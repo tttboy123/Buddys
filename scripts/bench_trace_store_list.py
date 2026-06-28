@@ -5,27 +5,37 @@ from __future__ import annotations
 import statistics
 import time
 from datetime import datetime, timedelta
+import argparse
 
 from buddys_api.db import connect_db, initialize_database
 from buddys_api.schemas import ActionProposal, ActionTrace, Intent, PermissionDecision
 from buddys_api.trace_store import TraceStore
 
 
-RECORD_COUNT = 50_000
-BUDDY_COUNT = 20
-SAMPLES = 20
-LIMIT = 200
-TARGET_BUDDY = "buddy_10"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Benchmark TraceStore list-path query performance.")
+    parser.add_argument("--record-count", type=int, default=50_000)
+    parser.add_argument("--buddy-count", type=int, default=20)
+    parser.add_argument("--samples", type=int, default=20)
+    parser.add_argument("--limit", type=int, default=200)
+    parser.add_argument("--target-buddy", default="buddy_10")
+    return parser.parse_args()
 
 
-if __name__ == "__main__":
+def run_benchmark(
+    record_count: int,
+    buddy_count: int,
+    samples: int,
+    limit: int,
+    target_buddy: str,
+) -> dict[str, float | int | str]:
     start = datetime(2026, 6, 28)
     connection = connect_db(":memory:")
     initialize_database(connection)
     store = TraceStore(connection)
 
-    for i in range(RECORD_COUNT):
-        buddy_id = f"buddy_{i % BUDDY_COUNT:02d}"
+    for i in range(record_count):
+        buddy_id = f"buddy_{i % buddy_count:02d}"
         ts = (start + timedelta(seconds=i)).isoformat() + "+00:00"
         store.save(
             ActionTrace(
@@ -59,9 +69,9 @@ if __name__ == "__main__":
         )
 
     sample_times = []
-    for _ in range(SAMPLES):
+    for _ in range(samples):
         started = time.perf_counter()
-        rows = store.list(buddy_id=TARGET_BUDDY, reverse=True, limit=LIMIT)
+        rows = store.list(buddy_id=target_buddy, reverse=True, limit=limit)
         duration = time.perf_counter() - started
         sample_times.append(duration)
         if not rows:
@@ -70,10 +80,39 @@ if __name__ == "__main__":
     med = statistics.median(sample_times)
     p95 = statistics.quantiles(sample_times, n=20)[18]
 
-    print(f"records={RECORD_COUNT}")
-    print(f"buddy={TARGET_BUDDY}")
-    print(f"samples={SAMPLES}")
-    print(f"median_sec={med:.6f}")
-    print(f"p95_sec={p95:.6f}")
-    print(f"min_sec={min(sample_times):.6f}")
-    print(f"max_sec={max(sample_times):.6f}")
+    return {
+        "records": record_count,
+        "buddy": target_buddy,
+        "samples": samples,
+        "limit": limit,
+        "buddy_count": buddy_count,
+        "median_sec": med,
+        "p95_sec": p95,
+        "min_sec": min(sample_times),
+        "max_sec": max(sample_times),
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    results = run_benchmark(
+        record_count=args.record_count,
+        buddy_count=args.buddy_count,
+        samples=args.samples,
+        limit=args.limit,
+        target_buddy=args.target_buddy,
+    )
+
+    print(f"records={results['records']}")
+    print(f"buddy_count={results['buddy_count']}")
+    print(f"buddy={results['buddy']}")
+    print(f"limit={results['limit']}")
+    print(f"samples={results['samples']}")
+    print(f"median_sec={results['median_sec']:.6f}")
+    print(f"p95_sec={results['p95_sec']:.6f}")
+    print(f"min_sec={results['min_sec']:.6f}")
+    print(f"max_sec={results['max_sec']:.6f}")
+
+
+if __name__ == "__main__":
+    main()
