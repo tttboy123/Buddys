@@ -377,7 +377,7 @@ def test_console_assets_agent_creation_path_is_declared_in_console_js() -> None:
     assert "createAgentButton" in render_agent_management_body
     assert "agentManagementNameInput" in render_agent_management_body
     assert "agentManagementActionStatus" in render_agent_management_body
-    assert "Registered ${agentName}" in create_agent_body
+    assert "已注册：${agentName}。" in create_agent_body
     
 
 def test_console_assets_agent_heartbeat_controls_declared_in_console_js() -> None:
@@ -391,8 +391,8 @@ def test_console_assets_agent_heartbeat_controls_declared_in_console_js() -> Non
     assert "agentHeartbeatStatus" in render_agent_management_body
     assert "agentHeartbeatVersion" in render_agent_management_body
     assert "agentHeartbeatSend" in render_agent_management_body
-    assert "Send heartbeat" in render_agent_management_body
-    assert "Sending heartbeat..." in render_agent_management_body
+    assert "发送心跳" in render_agent_management_body
+    assert "发送中..." in render_agent_management_body
     assert "AGENT_STATUSES" in render_agent_management_body
     assert "heartbeatStatus.disabled = isHeartbeatInFlight;" in render_agent_management_body
     assert "heartbeatVersion.disabled = isHeartbeatInFlight;" in render_agent_management_body
@@ -412,7 +412,7 @@ def test_console_assets_render_latest_answer_as_user_altitude_transparency_copy(
     script = client.get("/static/app.js").text
     render_latest_answer_body = extract_function_body(script, "renderLatestAnswer")
 
-    assert "Buddy answered using saved evidence." in render_latest_answer_body
+    assert "Buddy 已基于历史证据作答。" in render_latest_answer_body
     assert "evidence ready" not in render_latest_answer_body
 
 
@@ -443,7 +443,7 @@ def test_console_assets_support_session_aware_auth_and_state_memory_client_flow(
     assert "proposalCorrectionInput" in script
     assert "detailCode || payload?.detail" in request_json_body
     assert 'saveSession(result.access_token, result.user);' in register_auth_body
-    assert 'setAuthStatus(`Signed in as ${result.user.email}`, "ok");' in register_auth_body
+    assert 'setAuthStatus(`已注册并登录：${result.user.email}`, "ok");' in register_auth_body
     assert "Registered ${result.user.email}" not in register_auth_body
 
 
@@ -580,7 +580,7 @@ def test_console_assets_project_and_publish_device_workspace_from_auth_snapshot(
     assert "snapshot.latest_heartbeats" in project_workspace_body
     assert "snapshot.desired_states" in project_workspace_body
     assert "snapshot.device_events" in project_workspace_body
-    assert "No paired device yet." in render_device_workspace_body
+    assert "当前未配对设备。" in render_device_workspace_body
     assert "deviceReminderDraftsByBuddy[state.workspace.buddyId]" in render_device_workspace_body
     assert "publishDeviceDesiredState" in script
     assert "/me/buddies/" in publish_device_desired_state_body
@@ -692,7 +692,7 @@ def test_console_assets_show_unavailable_state_for_founder_metrics_failures_with
     load_founder_metrics_body = extract_function_body(script, "loadFounderMetrics")
     render_founder_metrics_body = extract_function_body(script, "renderFounderMetrics")
 
-    assert "Founder metrics unavailable" in render_founder_metrics_body
+    assert "创始人指标不可用" in render_founder_metrics_body
     assert "setWorkspaceStatus" not in load_founder_metrics_body
     assert "await loadSyncSnapshot();" not in load_founder_metrics_body
 
@@ -708,7 +708,7 @@ def test_console_assets_clear_stale_session_when_protected_api_returns_invalid_o
     assert 'detailCode === "invalid_or_expired_token"' in request_json_body
     assert "await recoverExpiredSession();" in request_json_body
     assert "clearSession();" in recover_expired_session_body
-    assert 'setAuthStatus("Stored session expired. Please login again.", "error");' in recover_expired_session_body
+    assert 'setAuthStatus("登录已过期，请重新登录。", "error");' in recover_expired_session_body
     assert "await loadSyncSnapshot();" in recover_expired_session_body
 
 
@@ -729,10 +729,10 @@ def test_console_assets_reset_auth_and_workspace_copy_honestly() -> None:
 
     assert "SpeechRecognition" in script
     assert "webkitSpeechRecognition" in script
-    assert "Voice capture is not available in this browser." in script
-    assert "I heard this but could not structure it yet" in script
-    assert "No confirmed state yet." in script
-    assert "No state-memory query yet." in script
+    assert "当前浏览器暂不支持语音采集。" in script
+    assert "我听到了内容，但还没法完整结构化。" in script
+    assert "暂未有已确认库存。" in script
+    assert "还未提交过状态查询。" in script
     assert "proactiveHint: null" in script
     assert "founderMetricsVisible: false" in script
     assert "state.workspace.confirmedItems = [];" in clear_session_body
@@ -748,9 +748,9 @@ def test_console_assets_surface_unrecognized_and_traceable_proactive_copy() -> N
 
     assert "renderUnrecognizedList" in script
     assert "proposal.unrecognized" in script
-    assert "I heard this but could not structure it yet" in script
-    assert "Buddy noticed" in script
-    assert "Based on" in script
+    assert "我听到了内容，但还没法完整结构化。" in script
+    assert "Buddy 发现提醒" in script
+    assert "基于" in script
     assert "dismissProactiveHint" in script
     assert "state.ui.dismissedHintKey = hint.hintKey;" in script
 

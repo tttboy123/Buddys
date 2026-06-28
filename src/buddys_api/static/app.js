@@ -1,10 +1,10 @@
 const SESSION_STORAGE_KEY = "buddysAccessToken";
-const VOICE_UNSUPPORTED_COPY = "Voice capture is not available in this browser.";
-const UNRECOGNIZED_COPY = "I heard this but could not structure it yet";
-const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
-const DEFAULT_PENDING_EMPTY = "No pending proposals.";
-const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
-const DEFAULT_RECIPE_EMPTY = "No saved recipes yet.";
+const VOICE_UNSUPPORTED_COPY = "当前浏览器暂不支持语音采集。";
+const UNRECOGNIZED_COPY = "我听到了内容，但还没法完整结构化。";
+const DEFAULT_CAPTURE_EMPTY = "暂未有已确认库存。";
+const DEFAULT_PENDING_EMPTY = "暂无待确认提案。";
+const DEFAULT_QUERY_EMPTY = "还未提交过状态查询。";
+const DEFAULT_RECIPE_EMPTY = "暂无已保存食谱。";
 const DEFAULT_SHOPPING_PASS_EMPTY = "还没有购物清单项。";
 const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
 
@@ -228,7 +228,7 @@ function clearSession() {
   $("authPasswordInput").value = "";
   $("authDisplayNameInput").value = "";
   $("authInviteCodeInput").value = "";
-  $("agentManagementActionStatus").textContent = "No agent registration yet.";
+  $("agentManagementActionStatus").textContent = "暂无已注册智能体。";
   $("deviceOwnerInstructionInput").value = "";
   $("recipeNameInput").value = "";
   $("recipeIngredientsInput").value = "";
@@ -238,7 +238,7 @@ function clearSession() {
 
 async function recoverExpiredSession() {
   clearSession();
-  setAuthStatus("Stored session expired. Please login again.", "error");
+  setAuthStatus("登录已过期，请重新登录。", "error");
   await loadSyncSnapshot();
 }
 
@@ -293,20 +293,20 @@ function renderAuthRail() {
   if (!isAuthenticated()) {
     setAuthStatus(
       BUDDYS_BOOTSTRAP.inviteRequired
-        ? "Signed out. Registration is invite-only right now."
-        : "Signed out. Login to use state memory.",
+        ? "未登录：当前仅允许邀请码注册。"
+        : "未登录：请登录后使用状态管理。",
     );
   }
   $("authInviteCodeInput").placeholder = BUDDYS_BOOTSTRAP.inviteRequired
-    ? "Invite code required"
-    : "Optional unless invite-only is enabled";
+    ? "请输入邀请码"
+    : "未启用邀请码时可留空";
 
   const select = $("authBuddySelect");
   select.replaceChildren();
   if (!state.workspace.buddies.length) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = isAuthenticated() ? "No Buddy yet" : "Login to see your Buddy";
+    option.textContent = isAuthenticated() ? "还未创建 Buddy" : "登录后可查看你的 Buddy";
     select.appendChild(option);
   } else {
     state.workspace.buddies.forEach((buddy) => {
@@ -324,18 +324,18 @@ function renderAuthRail() {
 function renderBuddyHero() {
   const buddy = selectedBuddy();
   if (!buddy) {
-    $("buddyGreeting").textContent = "Buddy is ready to learn your space";
-    $("buddyNameHeading").textContent = "My Buddy";
+    $("buddyGreeting").textContent = "Buddy 已就绪";
+    $("buddyNameHeading").textContent = "我的 Buddy";
     $("buddySummaryLine").textContent =
-      "Tell Buddy what you bought or used, then ask what is still at home.";
-    $("overviewTitle").textContent = "My Buddy";
-    $("buddySpace").textContent = "Home";
-    $("buddyState").textContent = isAuthenticated() ? "awaiting setup" : "signed out";
+      "告诉 Buddy 你买了什么、用了什么，再问它家里还剩哪些。";
+    $("overviewTitle").textContent = "我的 Buddy";
+    $("buddySpace").textContent = "家庭";
+    $("buddyState").textContent = isAuthenticated() ? "待初始化" : "未登录";
     return;
   }
-  $("buddyGreeting").textContent = `Hi, I am watching ${buddy.space_id} for you.`;
+  $("buddyGreeting").textContent = `你好，我在替你看管 ${buddy.space_id}。`;
   $("buddyNameHeading").textContent = buddy.name;
-  $("buddySummaryLine").textContent = "Capture changes, review them once, then ask with evidence.";
+  $("buddySummaryLine").textContent = "先录入状态，再复核一次，随后提问可给出证据依据。";
   $("overviewTitle").textContent = buddy.name;
   $("buddySpace").textContent = buddy.space_id;
   $("buddyState").textContent = buddy.status;
@@ -352,9 +352,9 @@ function renderConfirmedState() {
   $("stateMemoryLastUpdated").textContent = summary.last_state_change_at || "-";
 
   if (!isAuthenticated()) {
-    setWorkspaceStatus("Login and select a Buddy before submitting state-memory actions.");
+    setWorkspaceStatus("请先登录并选择一个 Buddy 后再进行状态操作。");
   } else if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create your first Buddy to unlock capture, query, and proposal review.");
+    setWorkspaceStatus("请先创建第一个 Buddy，解锁录入、查询与提案审核流程。");
   } else {
     setWorkspaceStatus(`Workspace revision ${state.workspace.stateRevision}.`);
   }
@@ -370,8 +370,8 @@ function renderCaptureComposer() {
   $("voiceCaptureStatus").textContent = voiceStatusCopy();
   $("voiceTranscriptInput").value = state.ui.voice.transcript;
   $("photoSelectionStatus").textContent = state.ui.photo.fileName
-    ? `Selected photo: ${state.ui.photo.fileName}`
-    : "No photo selected.";
+    ? `已选照片：${state.ui.photo.fileName}`
+    : "未选择照片。";
   $("photoPreviewImage").hidden = !state.ui.photo.previewUrl;
   if (state.ui.photo.previewUrl) {
     $("photoPreviewImage").src = state.ui.photo.previewUrl;
@@ -387,15 +387,15 @@ function voiceRecognitionSupported() {
 
 function voiceStatusCopy() {
   if (state.ui.voice.recording) {
-    return "Listening for one short pantry update...";
+    return "正在录音，请说一条简短更新。";
   }
   if (state.ui.voice.status === "captured") {
-    return "Voice transcript ready for review.";
+    return "语音转写完成，可直接提交流程。";
   }
   if (state.ui.voice.status === "error") {
-    return "Voice capture failed. Retry or type the transcript manually.";
+    return "语音采集失败，请重试或手动输入。";
   }
-  return "Voice transcript is idle.";
+  return "语音转写空闲。";
 }
 
 function clearPhotoSelection() {
@@ -424,7 +424,7 @@ function handlePhotoSelected(event) {
   };
   reader.onerror = () => {
     clearPhotoSelection();
-    setWorkspaceStatus("Photo preview failed. Choose another image.");
+    setWorkspaceStatus("照片预览失败，请换一张图片重试。");
   };
   reader.readAsDataURL(file);
 }
@@ -512,7 +512,7 @@ function renderProposalInbox() {
   list.replaceChildren();
   if (!state.workspace.pendingProposals.length) {
     const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No proposal selected for review.";
+    emptyItem.textContent = "当前未选中待处理提案。";
     list.appendChild(emptyItem);
     $("proposalCorrectionInput").value = "";
     state.ui.selectedProposalId = null;
@@ -528,9 +528,9 @@ function renderProposalInbox() {
     title.textContent = proposal.content;
     item.appendChild(title);
 
-    const meta = document.createElement("p");
-    meta.className = "support-copy";
-    meta.textContent = `${proposal.source} · ${proposal.deltas.length} structured item(s)`;
+  const meta = document.createElement("p");
+  meta.className = "support-copy";
+  meta.textContent = `${proposal.source} · ${proposal.deltas.length} 条结构化项`;
     item.appendChild(meta);
 
     const deltaList = document.createElement("ul");
@@ -547,28 +547,28 @@ function renderProposalInbox() {
     const actions = document.createElement("div");
     actions.className = "button-row";
 
-    const selectButton = document.createElement("button");
-    selectButton.type = "button";
-    selectButton.className = "ghost-button";
-    selectButton.textContent = "Edit correction";
-    selectButton.addEventListener("click", () => {
-      state.ui.selectedProposalId = proposal.proposal_id;
-      $("proposalCorrectionInput").value = JSON.stringify(proposal.deltas, null, 2);
-      setWorkspaceStatus(`Loaded correction draft for ${proposal.content}.`);
-      syncAuthControls();
-    });
+  const selectButton = document.createElement("button");
+  selectButton.type = "button";
+  selectButton.className = "ghost-button";
+  selectButton.textContent = "编辑修正";
+  selectButton.addEventListener("click", () => {
+    state.ui.selectedProposalId = proposal.proposal_id;
+    $("proposalCorrectionInput").value = JSON.stringify(proposal.deltas, null, 2);
+    setWorkspaceStatus(`已加载 ${proposal.content} 的修正草稿。`);
+    syncAuthControls();
+  });
 
-    const confirmButton = document.createElement("button");
-    confirmButton.type = "button";
-    confirmButton.className = "primary-button";
-    confirmButton.textContent = "Confirm";
-    confirmButton.addEventListener("click", () => confirmProposal(proposal.proposal_id));
+  const confirmButton = document.createElement("button");
+  confirmButton.type = "button";
+  confirmButton.className = "primary-button";
+  confirmButton.textContent = "确认";
+  confirmButton.addEventListener("click", () => confirmProposal(proposal.proposal_id));
 
-    const rejectButton = document.createElement("button");
-    rejectButton.type = "button";
-    rejectButton.className = "secondary-button";
-    rejectButton.textContent = "Reject";
-    rejectButton.addEventListener("click", () => rejectProposal(proposal.proposal_id));
+  const rejectButton = document.createElement("button");
+  rejectButton.type = "button";
+  rejectButton.className = "secondary-button";
+  rejectButton.textContent = "拒绝";
+  rejectButton.addEventListener("click", () => rejectProposal(proposal.proposal_id));
 
     actions.appendChild(selectButton);
     actions.appendChild(confirmButton);
@@ -589,18 +589,18 @@ function renderLatestAnswer() {
   const latestQuery = state.workspace.latestQuery;
   if (!latestQuery) {
     $("stateMemoryQuerySummary").textContent = DEFAULT_QUERY_EMPTY;
-    $("stateMemoryQueryMeta").textContent = "Evidence will appear here once a state-memory query has been asked.";
-    renderTextList("stateMemoryEvidenceList", [], "No evidence items captured.", () => "");
+    $("stateMemoryQueryMeta").textContent = "发起状态查询后，相关证据会展示在这里。";
+    renderTextList("stateMemoryEvidenceList", [], "尚未抓取到证据项。", () => "");
     return;
   }
   $("stateMemoryQuerySummary").textContent = latestQuery.summary;
   $("stateMemoryQueryMeta").textContent = latestQuery.missing_items?.length
-    ? `Buddy answered using saved evidence and still needs ${latestQuery.missing_items.join(" / ")}.`
-    : "Buddy answered using saved evidence.";
+    ? `Buddy 已基于历史证据作答，仍缺失：${latestQuery.missing_items.join(" / ")}。`
+    : "Buddy 已基于历史证据作答。";
   renderTextList(
     "stateMemoryEvidenceList",
     latestQuery.evidence_items || [],
-    latestQuery.evidence_item_ids?.length ? "Evidence item details unavailable." : "No evidence items captured.",
+    latestQuery.evidence_item_ids?.length ? "证据明细暂不可用。" : "尚未抓取到证据项。",
     (item) =>
       `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status} · ${item.source} · ${item.last_seen_at}`,
   );
@@ -615,13 +615,13 @@ function renderRecipeShelf() {
   list.replaceChildren();
 
   if (!isAuthenticated()) {
-    $("recipeShelfStatus").textContent = "Login to save recipes for this Buddy.";
+    $("recipeShelfStatus").textContent = "请先登录后为该 Buddy 保存食谱。";
   } else if (!state.workspace.buddyId) {
-    $("recipeShelfStatus").textContent = "Create your first Buddy before saving recipes.";
+    $("recipeShelfStatus").textContent = "请先创建一个 Buddy，再开始保存食谱。";
   } else {
     $("recipeShelfStatus").textContent = state.workspace.recipes.length
-      ? "Saved recipes are used before fallback recipe defaults for this Buddy."
-      : "Save one recipe to make missing-for-recipe answers personal to this Buddy.";
+      ? "已保存的食谱会优先用于配方缺口应答。"
+      : "先保存一条食谱，可让回答更贴合该 Buddy。";
   }
 
   if (!state.workspace.recipes.length) {
@@ -651,7 +651,7 @@ function renderRecipeShelf() {
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "ghost-button";
-    deleteButton.textContent = "Delete";
+    deleteButton.textContent = "删除";
     deleteButton.addEventListener("click", () => deleteRecipe(recipe.recipe_id));
 
     actions.appendChild(deleteButton);
@@ -722,7 +722,7 @@ function renderShoppingPass() {
     const doneButton = document.createElement("button");
     doneButton.type = "button";
     doneButton.className = "ghost-button";
-    doneButton.textContent = "Done";
+    doneButton.textContent = "完成";
     doneButton.addEventListener("click", () => markShoppingPassItemDone(item.shopping_item_id));
 
     actions.appendChild(doneButton);
@@ -734,7 +734,7 @@ function renderShoppingPass() {
 }
 
 function formatRecentActivity(activity) {
-  return activity.summary || "Buddy recorded a recent action.";
+  return activity.summary || "Buddy 最近有操作记录。";
 }
 
 function renderRecentActivity() {
@@ -742,21 +742,21 @@ function renderRecentActivity() {
   const status = $("buddyActivityStatus");
 
   if (!isAuthenticated()) {
-    status.textContent = "Login to see Buddy's latest saved updates and answers.";
-    renderTextList("buddyActivityList", [], "No recent Buddy activity yet.", () => "");
+    status.textContent = "请先登录后查看 Buddy 的最新更新与应答。";
+    renderTextList("buddyActivityList", [], "暂无最近活动。", () => "");
     return;
   }
   if (!state.workspace.buddyId) {
-    status.textContent = "Create your first Buddy to see recent activity and answers.";
-    renderTextList("buddyActivityList", [], "No recent Buddy activity yet.", () => "");
+    status.textContent = "请先创建一个 Buddy 再查看最近活动与应答。";
+    renderTextList("buddyActivityList", [], "暂无最近活动。", () => "");
     return;
   }
 
   status.textContent = activities.length
-    ? "Buddy keeps the latest saved updates, reviews, and answers here."
-    : "Buddy will keep the latest saved updates and answers here.";
+    ? "Buddy 会在此展示最近保存的更新、复核与应答。"
+    : "Buddy 将在此展示最近保存的更新与应答。";
 
-  renderTextList("buddyActivityList", activities, "No recent Buddy activity yet.", (activity) => {
+  renderTextList("buddyActivityList", activities, "暂无最近活动。", (activity) => {
     return formatRecentActivity(activity);
   });
 }
@@ -780,46 +780,46 @@ function renderCostGovernancePanel() {
   const planLines = [];
   const topProviderCopy = topProviderEntry
     ? `${topProviderEntry[0]} · ${topProviderEntry[1].total_tokens || 0} tokens`
-    : "No provider usage yet.";
+    : "暂无服务商用量数据。";
   const topModelCopy = topModelEntry
     ? `${topModelEntry[0]} · ${topModelEntry[1].total_tokens || 0} tokens`
-    : "No model usage yet.";
+    : "暂无模型用量数据。";
 
   if (!isAuthenticated()) {
-    $("costGovernanceStatus").textContent = "Login to see token usage and cost summary.";
-    renderTextList("planUsageList", [], "Sign in to unlock usage transparency.", (line) => line);
-    renderTextList("planUsageBreakdownList", [], "Sign in to see provider/model usage detail.", (line) => line);
-    $("planGovernanceCostRow").textContent = "Cost snapshot unavailable.";
+    $("costGovernanceStatus").textContent = "请先登录查看 Token 与消费透明度。";
+    renderTextList("planUsageList", [], "登录后可查看用量明细。", (line) => line);
+    renderTextList("planUsageBreakdownList", [], "登录后可查看服务商/模型用量。", (line) => line);
+    $("planGovernanceCostRow").textContent = "暂无成本快照。";
     return;
   }
 
   if (!planUsage || !Object.keys(planUsage).length) {
-    $("costGovernanceStatus").textContent = "Usage summary is not available yet.";
-    renderTextList("planUsageList", [], "No plan usage snapshot yet.", (line) => line);
-    renderTextList("planUsageBreakdownList", [], "No usage breakdown yet.", (line) => line);
-    $("planGovernanceCostRow").textContent = "Cost snapshot unavailable.";
+    $("costGovernanceStatus").textContent = "暂未拿到用量汇总。";
+    renderTextList("planUsageList", [], "暂无套餐用量快照。", (line) => line);
+    renderTextList("planUsageBreakdownList", [], "暂无用量细分。", (line) => line);
+    $("planGovernanceCostRow").textContent = "暂无成本快照。";
     return;
   }
 
-  planLines.push(`Plan: ${planId}`);
-  planLines.push(`Month: ${usageMonth}`);
-  planLines.push(`Used tokens: ${usedTokens}`);
-  planLines.push(`Monthly limit: ${monthlyLimit || 0}`);
+  planLines.push(`套餐：${planId}`);
+  planLines.push(`月份：${usageMonth}`);
+  planLines.push(`已用令牌：${usedTokens}`);
+  planLines.push(`月度上限：${monthlyLimit || 0}`);
   planLines.push(
-    `Remaining tokens: ${remainingTokens === null ? "unlimited" : remainingTokens.toLocaleString("en-US")}`,
+    `剩余令牌：${remainingTokens === null ? "不限" : remainingTokens.toLocaleString("en-US")}`,
   );
-  planLines.push(`Hard limit: ${hardLimit}`);
-  planLines.push(`Plan BYOK mode: ${planUsage.byok ? "on" : "off"}`);
+  planLines.push(`硬性上限：${hardLimit === "enabled" ? "已开启" : "未开启"}`);
+  planLines.push(`BYOK 模式：${planUsage.byok ? "开启" : "关闭"}`);
   if (planUsage.over_limit) {
-    planLines.push("Limit status: reached");
+    planLines.push("配额状态：已达上限");
   } else {
-    planLines.push("Limit status: in quota");
+    planLines.push("配额状态：正常");
   }
 
-  $("costGovernanceStatus").textContent = "Token and cost snapshot updated from server state.";
-  renderTextList("planUsageList", planLines, "Cost summary is empty.", (line) => line);
-  renderTextList("planUsageBreakdownList", [topProviderCopy, topModelCopy], "No usage breakdown yet.", (line) => line);
-  $("planGovernanceCostRow").textContent = `Estimated spend: ${money(costSummary.model_cost_usd + costSummary.tool_cost_usd + costSummary.log_cost_usd || 0)} / ${costEventCny(
+  $("costGovernanceStatus").textContent = "Token 与成本快照已从服务端更新。";
+  renderTextList("planUsageList", planLines, "成本汇总为空。", (line) => line);
+  renderTextList("planUsageBreakdownList", [topProviderCopy, topModelCopy], "暂无用量细分。", (line) => line);
+  $("planGovernanceCostRow").textContent = `预计支出：${money(costSummary.model_cost_usd + costSummary.tool_cost_usd + costSummary.log_cost_usd || 0)} / ${costEventCny(
     costSummary,
   ).toFixed(2)} CNY`;
 }
@@ -843,9 +843,9 @@ function renderProactiveMemoryCard() {
   if (!hint) {
     return;
   }
-  $("proactiveTitle").textContent = "Buddy noticed";
+  $("proactiveTitle").textContent = "Buddy 发现提醒";
   $("proactiveMessage").textContent = hint.message;
-  $("proactiveBasis").textContent = `Based on ${hint.basis.item_names.join(" / ")}`;
+  $("proactiveBasis").textContent = `基于 ${hint.basis.item_names.join(" / ")}`;
 }
 
 function dismissProactiveHint() {
@@ -863,22 +863,22 @@ function renderAnswerBasisPanel() {
   list.replaceChildren();
 
   if (!latestQuery) {
-    $("answerBasisQuestion").textContent = "No current answer basis.";
-    $("answerBasisSummary").textContent = "Ask Buddy something to inspect evidence details.";
+    $("answerBasisQuestion").textContent = "当前无可展示的回答依据。";
+    $("answerBasisSummary").textContent = "请先向 Buddy 提问以查看证据详情。";
     const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No answer evidence yet.";
+    emptyItem.textContent = "尚未返回证据。";
     list.appendChild(emptyItem);
     return;
   }
 
   $("answerBasisQuestion").textContent = `${latestQuery.question} · ${latestQuery.answer_type}`;
   $("answerBasisSummary").textContent = latestQuery.missing_items?.length
-    ? `${latestQuery.summary} Missing: ${latestQuery.missing_items.join(" / ")}`
+    ? `${latestQuery.summary}；缺失：${latestQuery.missing_items.join(" / ")}`
     : latestQuery.summary;
 
   if (!(latestQuery.evidence_items || []).length) {
     const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No answer evidence yet.";
+    emptyItem.textContent = "尚未返回证据。";
     list.appendChild(emptyItem);
     return;
   }
@@ -886,8 +886,8 @@ function renderAnswerBasisPanel() {
   latestQuery.evidence_items.forEach((item) => {
     const entry = document.createElement("li");
     appendLine(entry, `${item.name} · ${formatQuantity(item.quantity, item.unit)} · ${item.status}`);
-    appendLine(entry, `Source: ${item.source}`, "evidence-line");
-    appendLine(entry, `Last seen: ${item.last_seen_at}`, "evidence-line");
+    appendLine(entry, `来源：${item.source}`, "evidence-line");
+    appendLine(entry, `最后出现：${item.last_seen_at}`, "evidence-line");
     list.appendChild(entry);
   });
 }
@@ -934,9 +934,9 @@ function renderFounderMetricCard(targetId, title, rows) {
 function captureMixRows(captureBySource) {
   const entries = Object.entries(captureBySource || {});
   if (!entries.length) {
-    return ["No founder capture metrics yet."];
+    return ["暂无创作者采集来源统计。"];
   }
-  return entries.map(([source, count]) => `${source}: ${count}`);
+  return entries.map(([source, count]) => `${source}：${count}`);
 }
 
 function renderFounderMetrics() {
@@ -947,10 +947,10 @@ function renderFounderMetrics() {
 
   const unavailableReason = state.workspace.founderMetricsUnavailableReason;
   if (unavailableReason) {
-    $("founderMetricsStatus").textContent = `Founder metrics unavailable: ${unavailableReason}`;
-    renderFounderMetricCard("founderActivationPanel", "My activation", ["Founder metrics unavailable"]);
-    renderFounderMetricCard("founderRetentionPanel", "Activated retention", ["Founder metrics unavailable"]);
-    renderFounderMetricCard("founderCaptureMixPanel", "Capture sources", ["Founder metrics unavailable"]);
+    $("founderMetricsStatus").textContent = `创始人指标不可用：${unavailableReason}`;
+    renderFounderMetricCard("founderActivationPanel", "我在用", ["创始人指标不可用"]);
+    renderFounderMetricCard("founderRetentionPanel", "留存表现", ["创始人指标不可用"]);
+    renderFounderMetricCard("founderCaptureMixPanel", "采集来源", ["创始人指标不可用"]);
     return;
   }
 
@@ -958,18 +958,18 @@ function renderFounderMetrics() {
   const retention = state.workspace.retentionSummary || {};
   const activated = Boolean(engagement.activation?.completed_first_capture_confirm_query);
 
-  $("founderMetricsStatus").textContent = "Founder metrics are live for this account.";
-  renderFounderMetricCard("founderActivationPanel", "My activation", [
-    activated ? "Closed first capture -> review -> query loop: yes" : "Closed first capture -> review -> query loop: no",
-    `Tracked events: ${engagement.event_count || 0}`,
+  $("founderMetricsStatus").textContent = "当前账户已启用创始人指标。";
+  renderFounderMetricCard("founderActivationPanel", "我在用", [
+    activated ? "已完成首次录入-复核-提问闭环" : "未完成首次录入-复核-提问闭环",
+    `已追踪事件：${engagement.event_count || 0}`,
   ]);
-  renderFounderMetricCard("founderRetentionPanel", "Activated retention", [
-    `Activated users: ${retention.activated_users || 0}`,
-    `D1 active: ${retention.d1_active_users || 0}`,
-    `D3 active: ${retention.d3_active_users || 0}`,
-    `D7 active: ${retention.d7_active_users || 0}`,
+  renderFounderMetricCard("founderRetentionPanel", "留存表现", [
+    `已激活用户：${retention.activated_users || 0}`,
+    `D1 活跃：${retention.d1_active_users || 0}`,
+    `D3 活跃：${retention.d3_active_users || 0}`,
+    `D7 活跃：${retention.d7_active_users || 0}`,
   ]);
-  renderFounderMetricCard("founderCaptureMixPanel", "Capture sources", captureMixRows(retention.capture_by_source));
+  renderFounderMetricCard("founderCaptureMixPanel", "采集来源", captureMixRows(retention.capture_by_source));
 }
 
 function renderDeviceWorkspace() {
@@ -981,73 +981,73 @@ function renderDeviceWorkspace() {
   const deviceEvents = state.workspace.deviceEvents || [];
 
   if (!isAuthenticated()) {
-    $("deviceWorkspaceStatus").textContent = "Login to inspect the paired device for this Buddy.";
+    $("deviceWorkspaceStatus").textContent = "请先登录后查看该 Buddy 的绑定设备。";
     $("deviceOwnerInstructionInput").value = "";
-    renderFounderMetricCard("deviceIdentityPanel", "Device identity", ["No paired device yet."]);
-    renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", ["No paired device yet."]);
-    renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", ["No paired device yet."]);
-    renderFounderMetricCard("deviceEventPanel", "Recent device events", ["No paired device yet."]);
-    renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", ["No paired device yet."]);
+    renderFounderMetricCard("deviceIdentityPanel", "设备身份", ["尚未绑定设备。"]);
+    renderFounderMetricCard("deviceHealthPanel", "心跳与状态", ["尚未绑定设备。"]);
+    renderFounderMetricCard("deviceDesiredStatePanel", "目标状态与版本", ["尚未绑定设备。"]);
+    renderFounderMetricCard("deviceEventPanel", "近期设备事件", ["尚未绑定设备。"]);
+    renderFounderMetricCard("deviceBindingPanel", "绑定与 Agent 机器", ["尚未绑定设备。"]);
     syncAuthControls();
     return;
   }
 
   if (!state.workspace.buddyId) {
-    $("deviceWorkspaceStatus").textContent = "Create your first Buddy to inspect its device.";
+    $("deviceWorkspaceStatus").textContent = "请先创建第一个 Buddy 再查看设备。";
     $("deviceOwnerInstructionInput").value = "";
-    renderFounderMetricCard("deviceIdentityPanel", "Device identity", ["No paired device yet."]);
-    renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", ["No paired device yet."]);
-    renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", ["No paired device yet."]);
-    renderFounderMetricCard("deviceEventPanel", "Recent device events", ["No paired device yet."]);
-    renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", ["No paired device yet."]);
+    renderFounderMetricCard("deviceIdentityPanel", "设备身份", ["尚未配对设备。"]);
+    renderFounderMetricCard("deviceHealthPanel", "心跳与状态", ["尚未配对设备。"]);
+    renderFounderMetricCard("deviceDesiredStatePanel", "目标状态与版本", ["尚未配对设备。"]);
+    renderFounderMetricCard("deviceEventPanel", "近期设备事件", ["尚未配对设备。"]);
+    renderFounderMetricCard("deviceBindingPanel", "绑定与 Agent 机器", ["尚未配对设备。"]);
     syncAuthControls();
     return;
   }
 
   if (!device) {
-    $("deviceWorkspaceStatus").textContent = "No paired device yet.";
+    $("deviceWorkspaceStatus").textContent = "当前未配对设备。";
     delete state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId];
     $("deviceOwnerInstructionInput").value = "";
-    renderFounderMetricCard("deviceIdentityPanel", "Device identity", ["No paired device yet."]);
-    renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", ["No paired device yet."]);
-    renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", ["No paired device yet."]);
-    renderFounderMetricCard("deviceEventPanel", "Recent device events", ["No paired device yet."]);
-    renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", ["No paired device yet."]);
+    renderFounderMetricCard("deviceIdentityPanel", "设备身份", ["当前未配对设备。"]);
+    renderFounderMetricCard("deviceHealthPanel", "心跳与状态", ["当前未配对设备。"]);
+    renderFounderMetricCard("deviceDesiredStatePanel", "目标状态与版本", ["当前未配对设备。"]);
+    renderFounderMetricCard("deviceEventPanel", "近期设备事件", ["当前未配对设备。"]);
+    renderFounderMetricCard("deviceBindingPanel", "绑定与 Agent 机器", ["当前未配对设备。"]);
     syncAuthControls();
     return;
   }
 
-  $("deviceWorkspaceStatus").textContent = "Owner-auth desired state can be published from this browser.";
+  $("deviceWorkspaceStatus").textContent = "可在当前页面发布设备提醒意图。";
   $("deviceOwnerInstructionInput").value = state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId] || "";
-  renderFounderMetricCard("deviceIdentityPanel", "Device identity", [
-    `Device: ${device.device_id}`,
-    `Firmware: ${device.firmware_version || "-"}`,
-    `Space: ${device.space_id}`,
+  renderFounderMetricCard("deviceIdentityPanel", "设备身份", [
+    `设备：${device.device_id}`,
+    `固件：${device.firmware_version || "未知"}`,
+    `空间：${device.space_id}`,
   ]);
-  renderFounderMetricCard("deviceHealthPanel", "Heartbeat and state", [
-    heartbeat ? `Current state: ${heartbeat.current_state}` : "Current state: unknown",
-    heartbeat ? `Wi-Fi RSSI: ${heartbeat.wifi_rssi}` : "Wi-Fi RSSI: unknown",
-    heartbeat ? `Uptime: ${heartbeat.uptime_seconds}s` : "Uptime: unknown",
-    heartbeat ? `Heartbeat: ${heartbeat.created_at}` : "Heartbeat: waiting for first heartbeat",
+  renderFounderMetricCard("deviceHealthPanel", "心跳与状态", [
+    heartbeat ? `当前状态：${heartbeat.current_state}` : "当前状态：未知",
+    heartbeat ? `Wi-Fi 信号：${heartbeat.wifi_rssi}` : "Wi-Fi 信号：未知",
+    heartbeat ? `在线时长：${heartbeat.uptime_seconds}s` : "在线时长：未知",
+    heartbeat ? `最近心跳：${heartbeat.created_at}` : "最近心跳：等待首次上报",
   ]);
-  renderFounderMetricCard("deviceDesiredStatePanel", "Desired state and revision", [
-    `Desired state: ${desiredState?.state || "idle"}`,
-    `Revision: ${desiredState?.revision || 0}`,
-    `Manual required: ${desiredState?.manual_required ? "yes" : "no"}`,
-    desiredState?.updated_at ? `Updated: ${desiredState.updated_at}` : "Updated: -",
+  renderFounderMetricCard("deviceDesiredStatePanel", "目标状态与版本", [
+    `目标状态：${desiredState?.state || "空闲"}`,
+    `版本：${desiredState?.revision || 0}`,
+    `手动确认：${desiredState?.manual_required ? "是" : "否"}`,
+    desiredState?.updated_at ? `更新时间：${desiredState.updated_at}` : "更新时间：-",
   ]);
   renderFounderMetricCard(
     "deviceEventPanel",
-    "Recent device events",
+    "近期设备事件",
     deviceEvents.length
       ? deviceEvents.slice(-5).reverse().map((event) => `${event.event_type} · ${event.created_at}`)
-      : ["No device events yet."],
+      : ["暂无设备事件。"],
   );
-  renderFounderMetricCard("deviceBindingPanel", "Binding and agent machine", [
-    binding ? `Role: ${binding.role}` : "Role: unbound",
-    binding ? `Authority epoch: ${binding.authority_epoch}` : "Authority epoch: -",
-    agentMachine ? `Machine: ${agentMachine.agent_machine_id} · ${agentMachine.machine_type}` : "Machine: none",
-    agentMachine ? `Machine status: ${agentMachine.status}` : "Machine status: unknown",
+  renderFounderMetricCard("deviceBindingPanel", "绑定与 Agent 机器", [
+    binding ? `角色：${binding.role}` : "角色：未绑定",
+    binding ? `权责轮次：${binding.authority_epoch}` : "权责轮次：-",
+    agentMachine ? `机器：${agentMachine.agent_machine_id} · ${agentMachine.machine_type}` : "机器：未分配",
+    agentMachine ? `机器状态：${agentMachine.status}` : "机器状态：未知",
   ]);
   syncAuthControls();
 }
@@ -1065,26 +1065,26 @@ function renderAgentManagement() {
   if (!hasWorkspace) {
     renderTextList(
       "agentManagementList",
-      ["Sign in to inspect registered agents and agent machines."],
-      "Sign in to inspect registered agents and agent machines.",
+      ["请先登录后查看已注册的智能体与 Agent 机器。"],
+      "请先登录后查看已注册的智能体与 Agent 机器。",
       (line) => line,
     );
-    statusNode.textContent = "Sign in to inspect registered agents and agent machines.";
-    actionStatusNode.textContent = "Sign in to manage agents.";
+    statusNode.textContent = "请先登录后查看已注册的智能体与 Agent 机器。";
+    actionStatusNode.textContent = "请先登录后管理智能体。";
     return;
   }
 
   list.replaceChildren();
-  actionStatusNode.textContent = "Agent registration controls are ready.";
+  actionStatusNode.textContent = "智能体注册控件已就绪。";
   if (createButton) {
     createButton.disabled = !hasAgentName;
   }
 
   if (!hasAgents && !hasAgentMachines) {
     const emptyItem = document.createElement("li");
-    emptyItem.textContent = "No agents or agent machines are registered yet.";
+    emptyItem.textContent = "暂无已注册智能体或 Agent 机器。";
     list.appendChild(emptyItem);
-    statusNode.textContent = "No agents or agent machines are registered yet.";
+    statusNode.textContent = "暂无已注册智能体或 Agent 机器。";
     return;
   }
 
@@ -1101,7 +1101,7 @@ function renderAgentManagement() {
     const agentHeader = document.createElement("li");
     agentHeader.className = "proposal-card";
     const headerTitle = document.createElement("strong");
-    headerTitle.textContent = "Registered agents";
+    headerTitle.textContent = "已注册智能体";
     agentHeader.appendChild(headerTitle);
     list.appendChild(agentHeader);
 
@@ -1109,32 +1109,32 @@ function renderAgentManagement() {
       const item = document.createElement("li");
       item.className = "proposal-card";
       const heading = document.createElement("strong");
-      const agentName = agent.name || "Unnamed agent";
-      const agentRole = agent.role || "unknown";
+      const agentName = agent.name || "未命名智能体";
+      const agentRole = agent.role || "未知";
       heading.textContent = `${agentName} · ${agentRole}`;
       item.appendChild(heading);
 
       const meta = document.createElement("p");
       meta.className = "support-copy";
-      meta.textContent = `Status: ${agent.status} · Version: ${agent.version || "-"}`;
+      meta.textContent = `状态：${agent.status} · 版本：${agent.version || "未知"}`;
       item.appendChild(meta);
 
       const ids = document.createElement("p");
       ids.className = "support-copy";
-      ids.textContent = `Agent ID: ${agent.agent_id}`;
+      ids.textContent = `智能体 ID：${agent.agent_id}`;
       item.appendChild(ids);
 
       const lastSeen = document.createElement("p");
       lastSeen.className = "support-copy";
-      lastSeen.textContent = `Last seen: ${agent.last_seen || "never"}`;
+      lastSeen.textContent = `最近在线：${agent.last_seen || "从未"}`;
       item.appendChild(lastSeen);
 
       const metadataKeys = Object.keys(agent.metadata || {});
       const capabilityKeys = Object.keys(agent.capabilities || {});
       const extra = document.createElement("p");
       extra.className = "support-copy";
-      extra.textContent = `Metadata: ${metadataKeys.length ? metadataKeys.join(", ") : "none"} · Capabilities: ${
-        capabilityKeys.length ? capabilityKeys.join(", ") : "none"
+      extra.textContent = `元数据：${metadataKeys.length ? metadataKeys.join(", ") : "无"} · 能力：${
+        capabilityKeys.length ? capabilityKeys.join(", ") : "无"
       }`;
       item.appendChild(extra);
 
@@ -1147,7 +1147,7 @@ function renderAgentManagement() {
       heartbeatStatusField.className = "field";
       heartbeatStatusField.style.flex = "1";
       const heartbeatStatusLabel = document.createElement("span");
-      heartbeatStatusLabel.textContent = "Status";
+      heartbeatStatusLabel.textContent = "状态";
       heartbeatStatusField.appendChild(heartbeatStatusLabel);
       const heartbeatStatus = document.createElement("select");
       heartbeatStatus.id = `agentHeartbeatStatus-${agent.agent_id}`;
@@ -1166,7 +1166,7 @@ function renderAgentManagement() {
       heartbeatVersionField.className = "field";
       heartbeatVersionField.style.flex = "1";
       const heartbeatVersionLabel = document.createElement("span");
-      heartbeatVersionLabel.textContent = "Version";
+      heartbeatVersionLabel.textContent = "版本";
       heartbeatVersionField.appendChild(heartbeatVersionLabel);
       const heartbeatVersion = document.createElement("input");
       heartbeatVersion.id = `agentHeartbeatVersion-${agent.agent_id}`;
@@ -1183,7 +1183,7 @@ function renderAgentManagement() {
       sendHeartbeatButton.type = "button";
       const isHeartbeatInFlight = HEARTBEAT_REQUESTS_IN_FLIGHT.has(agent.agent_id);
       sendHeartbeatButton.disabled = isHeartbeatInFlight;
-      sendHeartbeatButton.textContent = isHeartbeatInFlight ? "Sending heartbeat..." : "Send heartbeat";
+      sendHeartbeatButton.textContent = isHeartbeatInFlight ? "发送中..." : "发送心跳";
       heartbeatStatus.disabled = isHeartbeatInFlight;
       heartbeatVersion.disabled = isHeartbeatInFlight;
       sendHeartbeatButton.addEventListener("click", async () => {
@@ -1201,7 +1201,7 @@ function renderAgentManagement() {
     const machineHeader = document.createElement("li");
     machineHeader.className = "proposal-card";
     const machineTitle = document.createElement("strong");
-    machineTitle.textContent = "Agent machines";
+    machineTitle.textContent = "Agent 机器";
     machineHeader.appendChild(machineTitle);
     list.appendChild(machineHeader);
 
@@ -1210,30 +1210,30 @@ function renderAgentManagement() {
       item.className = "proposal-card";
       const header = document.createElement("strong");
       const machineType = agentMachine.machine_type || "agent-machine";
-      const machineStatus = agentMachine.status || "unknown";
+      const machineStatus = agentMachine.status || "未知";
       header.textContent = `${machineType} · ${machineStatus}`;
       item.appendChild(header);
 
       const machineId = document.createElement("p");
       machineId.className = "support-copy";
-      machineId.textContent = `Machine ID: ${agentMachine.agent_machine_id || "-"}`;
+      machineId.textContent = `机器 ID：${agentMachine.agent_machine_id || "-"}`;
       item.appendChild(machineId);
 
       const machineVersion = document.createElement("p");
       machineVersion.className = "support-copy";
-      machineVersion.textContent = `Runtime: ${agentMachine.runtime_version || "-"}`;
+      machineVersion.textContent = `运行时：${agentMachine.runtime_version || "-"}`;
       item.appendChild(machineVersion);
 
       const machineOwner = document.createElement("p");
       machineOwner.className = "support-copy";
-      machineOwner.textContent = `Owner: ${agentMachine.owner_user_id || "-"}`;
+      machineOwner.textContent = `所属用户：${agentMachine.owner_user_id || "-"}`;
       item.appendChild(machineOwner);
 
       list.appendChild(item);
     });
   }
 
-  statusNode.textContent = `Agents: ${state.workspace.agents.length} · Agent machines: ${state.workspace.agentMachines.length}`;
+  statusNode.textContent = `智能体：${state.workspace.agents.length} · Agent 机器：${state.workspace.agentMachines.length}`;
 }
 
 function parseAgentHeartbeatVersion(versionValue) {
@@ -1243,7 +1243,7 @@ function parseAgentHeartbeatVersion(versionValue) {
 
 async function sendAgentHeartbeat(agentId) {
   if (!state.auth.user) {
-    $("agentManagementActionStatus").textContent = "Sign in to send heartbeat.";
+    $("agentManagementActionStatus").textContent = "请先登录后发送心跳。";
     return;
   }
 
@@ -1253,19 +1253,19 @@ async function sendAgentHeartbeat(agentId) {
   const heartbeatButton = $(`agentHeartbeatSend-${agentId}`);
 
   if (!statusSelect) {
-    statusNode.textContent = "Heartbeat controls unavailable.";
+    statusNode.textContent = "心跳控件暂不可用。";
     return;
   }
   if (!heartbeatButton) {
-    statusNode.textContent = "Heartbeat controls unavailable.";
+    statusNode.textContent = "心跳控件暂不可用。";
     return;
   }
   if (!versionInput) {
-    statusNode.textContent = "Heartbeat controls unavailable.";
+    statusNode.textContent = "心跳控件暂不可用。";
     return;
   }
   if (HEARTBEAT_REQUESTS_IN_FLIGHT.has(agentId)) {
-    statusNode.textContent = "Heartbeat send already in progress.";
+    statusNode.textContent = "心跳发送进行中，请稍候。";
     return;
   }
 
@@ -1274,16 +1274,16 @@ async function sendAgentHeartbeat(agentId) {
   const currentAgent = state.workspace.agents.find((entry) => entry.agent_id === agentId);
 
   if (!currentAgent) {
-    statusNode.textContent = "Agent not found.";
+    statusNode.textContent = "未找到该智能体。";
     return;
   }
 
-  statusNode.textContent = `Sending heartbeat for ${currentAgent.name || agentId}...`;
+  statusNode.textContent = `正在发送 ${currentAgent.name || agentId} 的心跳...`;
   HEARTBEAT_REQUESTS_IN_FLIGHT.add(agentId);
   statusSelect.disabled = true;
   versionInput.disabled = true;
   heartbeatButton.disabled = true;
-  heartbeatButton.textContent = "Sending heartbeat...";
+  heartbeatButton.textContent = "发送中...";
 
   try {
     await requestJson(`/agents/${agentId}/heartbeat`, {
@@ -1294,13 +1294,13 @@ async function sendAgentHeartbeat(agentId) {
         capabilities: currentAgent.capabilities || {},
       }),
     });
-    statusNode.textContent = `Heartbeat sent for ${currentAgent.name || agentId}.`;
+    statusNode.textContent = `${currentAgent.name || agentId} 的心跳已发送。`;
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    statusNode.textContent = `Heartbeat failed: ${error.message}`;
+    statusNode.textContent = `发送心跳失败：${error.message}`;
   } finally {
     HEARTBEAT_REQUESTS_IN_FLIGHT.delete(agentId);
     if (statusSelect) {
@@ -1311,24 +1311,24 @@ async function sendAgentHeartbeat(agentId) {
     }
     if (heartbeatButton) {
       heartbeatButton.disabled = false;
-      heartbeatButton.textContent = "Send heartbeat";
+      heartbeatButton.textContent = "发送心跳";
     }
   }
 }
 
 async function createAgent() {
   if (!state.auth.user) {
-    $("agentManagementActionStatus").textContent = "Sign in before registering an agent.";
+    $("agentManagementActionStatus").textContent = "请先登录后再注册智能体。";
     return;
   }
   const agentName = $("agentManagementNameInput").value.trim();
   const agentRole = $("agentManagementRoleSelect").value;
   if (!agentName) {
-    $("agentManagementActionStatus").textContent = "Agent name is required.";
+    $("agentManagementActionStatus").textContent = "请输入智能体名称。";
     return;
   }
 
-  $("agentManagementActionStatus").textContent = "Registering agent...";
+  $("agentManagementActionStatus").textContent = "正在注册智能体...";
 
   try {
     await requestJson("/agents", {
@@ -1339,13 +1339,13 @@ async function createAgent() {
       }),
     });
     $("agentManagementNameInput").value = "";
-    $("agentManagementActionStatus").textContent = `Registered ${agentName}.`;
+    $("agentManagementActionStatus").textContent = `已注册：${agentName}。`;
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    $("agentManagementActionStatus").textContent = `Agent registration failed: ${error.message}`;
+    $("agentManagementActionStatus").textContent = `智能体注册失败：${error.message}`;
   }
 }
 
@@ -1381,14 +1381,14 @@ async function restoreSession() {
   state.auth.accessToken = accessToken;
   try {
     state.auth.user = await requestJson("/auth/me");
-    setAuthStatus(`Signed in as ${state.auth.user.email}`, "ok");
+    setAuthStatus(`已登录：${state.auth.user.email}`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
     clearSession();
-    setAuthStatus("Stored session expired. Please login again.", "error");
+    setAuthStatus("会话已过期，请重新登录。", "error");
     await refreshWorkspace();
   }
 }
@@ -1405,11 +1405,11 @@ function authPayload() {
 async function registerAuth() {
   const payload = authPayload();
   if (!payload.email || !payload.password) {
-    setAuthStatus("Email and password are required for registration.", "error");
+    setAuthStatus("注册需填写邮箱和密码。", "error");
     return;
   }
   if (BUDDYS_BOOTSTRAP.inviteRequired && !payload.invite_code) {
-    setAuthStatus("Invite code is required for registration.", "error");
+    setAuthStatus("注册需填写邀请码。", "error");
     return;
   }
   try {
@@ -1420,17 +1420,17 @@ async function registerAuth() {
     });
     saveSession(result.access_token, result.user);
     $("authPasswordInput").value = "";
-    setAuthStatus(`Signed in as ${result.user.email}`, "ok");
+    setAuthStatus(`已注册并登录：${result.user.email}`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
-    setAuthStatus(`Register failed: ${error.message}`, "error");
+    setAuthStatus(`注册失败：${error.message}`, "error");
   }
 }
 
 async function loginAuth() {
   const payload = authPayload();
   if (!payload.email || !payload.password) {
-    setAuthStatus("Email and password are required for login.", "error");
+    setAuthStatus("登录需填写邮箱和密码。", "error");
     return;
   }
   try {
@@ -1441,10 +1441,10 @@ async function loginAuth() {
     });
     saveSession(result.access_token, result.user);
     $("authPasswordInput").value = "";
-    setAuthStatus(`Signed in as ${result.user.email}`, "ok");
+    setAuthStatus(`已登录：${result.user.email}`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
-    setAuthStatus(`Login failed: ${error.message}`, "error");
+    setAuthStatus(`登录失败：${error.message}`, "error");
   }
 }
 
@@ -1460,8 +1460,8 @@ async function logoutAuth() {
   clearSession();
   setAuthStatus(
     BUDDYS_BOOTSTRAP.inviteRequired
-      ? "Signed out. Registration is invite-only right now."
-      : "Signed out. Login to use state memory.",
+      ? "已登出：当前为邀请码注册模式。"
+      : "已登出：登录后可使用状态记忆。",
   );
   await loadSyncSnapshot();
 }
@@ -1485,7 +1485,7 @@ async function loadAuthBuddies() {
 
 async function createMyBuddy() {
   if (!state.auth.user) {
-    setAuthStatus("Login before creating a Buddy.", "error");
+    setAuthStatus("请先登录后再创建 Buddy。", "error");
     return;
   }
   try {
@@ -1494,13 +1494,13 @@ async function createMyBuddy() {
       body: JSON.stringify({ name: "My Buddy", space_id: "home" }),
     });
     state.workspace.buddyId = buddy.buddy_id;
-    setAuthStatus(`Buddy created for ${state.auth.user.email}`, "ok");
+    setAuthStatus(`已为 ${state.auth.user.email} 创建 Buddy。`, "ok");
     await loadAuthWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setAuthStatus(`Create Buddy failed: ${error.message}`, "error");
+    setAuthStatus(`创建 Buddy 失败：${error.message}`, "error");
   }
 }
 
@@ -1662,12 +1662,12 @@ async function refreshWorkspace() {
 
 async function publishDeviceDesiredState() {
   if (!state.workspace.buddyId || !state.workspace.device) {
-    $("deviceWorkspaceStatus").textContent = "No paired device yet.";
+    $("deviceWorkspaceStatus").textContent = "当前未配对设备。";
     return;
   }
   const instruction = $("deviceOwnerInstructionInput").value.trim();
   if (!instruction) {
-    $("deviceWorkspaceStatus").textContent = "Manual reminder text is required.";
+    $("deviceWorkspaceStatus").textContent = "请先填写手动提醒内容。";
     syncAuthControls();
     return;
   }
@@ -1684,23 +1684,23 @@ async function publishDeviceDesiredState() {
     state.ui.deviceReminderDraftsByBuddy[state.workspace.buddyId] = "";
     $("deviceOwnerInstructionInput").value = "";
     await refreshWorkspace();
-    $("deviceWorkspaceStatus").textContent = `Desired state published at revision ${response.desired_state.revision}.`;
+    $("deviceWorkspaceStatus").textContent = `已发布目标状态，版本 ${response.desired_state.revision}。`;
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    $("deviceWorkspaceStatus").textContent = `Publish failed: ${error.message}`;
+    $("deviceWorkspaceStatus").textContent = `发布失败：${error.message}`;
   }
 }
 
 async function submitCapture() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before capture.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy 再提交捕获。");
     return;
   }
   const content = $("captureTextInput").value.trim();
   if (!content) {
-    setWorkspaceStatus("Capture content is required.");
+    setWorkspaceStatus("请输入本次记录内容。");
     return;
   }
   try {
@@ -1714,19 +1714,19 @@ async function submitCapture() {
     $("captureTextInput").value = "";
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
-    setWorkspaceStatus(`Capture saved as pending proposal: ${response.proposal.content}`);
+    setWorkspaceStatus(`已保存为待审批提案：${response.proposal.content}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Capture failed: ${error.message}`);
+    setWorkspaceStatus(`记录保存失败：${error.message}`);
   }
 }
 
 async function submitPhotoCapture() {
   if (!state.workspace.buddyId || !state.ui.photo.base64 || !state.ui.photo.mediaType) {
-    setWorkspaceStatus("Choose one photo before saving a photo update.");
+    setWorkspaceStatus("请先选择一张图片，再保存照片记录。");
     return;
   }
   try {
@@ -1741,24 +1741,24 @@ async function submitPhotoCapture() {
     clearPhotoSelection();
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
-    setWorkspaceStatus(`Photo saved as pending proposal: ${response.proposal.content}`);
+    setWorkspaceStatus(`图片记录已保存为待审批提案：${response.proposal.content}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Photo capture failed: ${error.message}`);
+    setWorkspaceStatus(`照片记录失败：${error.message}`);
   }
 }
 
 async function submitVoiceTranscript() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before saving a reviewed transcript note.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy 再保存语音文本。");
     return;
   }
   const transcript = $("voiceTranscriptInput").value.trim();
   if (!transcript) {
-    setWorkspaceStatus("Voice transcript is empty.");
+    setWorkspaceStatus("语音转写内容为空。");
     return;
   }
   try {
@@ -1770,24 +1770,24 @@ async function submitVoiceTranscript() {
     state.ui.voice.status = "idle";
     state.ui.selectedProposalId = response.proposal.proposal_id;
     $("proposalCorrectionInput").value = JSON.stringify(response.proposal.deltas, null, 2);
-    setWorkspaceStatus(`Reviewed transcript saved as pending note: ${response.proposal.content}`);
+    setWorkspaceStatus(`语音转写已保存为待审批记录：${response.proposal.content}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Transcript save failed: ${error.message}`);
+    setWorkspaceStatus(`转写保存失败：${error.message}`);
   }
 }
 
 async function submitQuery() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before querying state memory.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy 再查询状态。");
     return;
   }
   const question = $("queryTextInput").value.trim();
   if (!question) {
-    setWorkspaceStatus("Query text is required.");
+    setWorkspaceStatus("请输入提问内容。");
     return;
   }
   try {
@@ -1796,19 +1796,19 @@ async function submitQuery() {
       body: JSON.stringify({ question }),
     });
     $("queryTextInput").value = "";
-    setWorkspaceStatus(`Query answered: ${answer.summary}`);
+    setWorkspaceStatus(`已查询：${answer.summary}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Query failed: ${error.message}`);
+    setWorkspaceStatus(`查询失败：${error.message}`);
   }
 }
 
 async function submitRecipe() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before saving a recipe.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy 再保存食谱。");
     return;
   }
   const name = $("recipeNameInput").value.trim();
@@ -1817,7 +1817,7 @@ async function submitRecipe() {
     .map((value) => value.trim())
     .filter(Boolean);
   if (!name || !ingredients.length) {
-    setWorkspaceStatus("Recipe name and ingredients are required.");
+    setWorkspaceStatus("请填写食谱名称与食材。");
     syncAuthControls();
     return;
   }
@@ -1828,13 +1828,13 @@ async function submitRecipe() {
     });
     $("recipeNameInput").value = "";
     $("recipeIngredientsInput").value = "";
-    setWorkspaceStatus(`Saved recipe: ${formatRecipe(response.recipe)}`);
+    setWorkspaceStatus(`食谱已保存：${formatRecipe(response.recipe)}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Recipe save failed: ${error.message}`);
+    setWorkspaceStatus(`保存食谱失败：${error.message}`);
   }
 }
 
@@ -1843,13 +1843,13 @@ async function deleteRecipe(recipeId) {
     await requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/recipes/${recipeId}`, {
       method: "DELETE",
     });
-    setWorkspaceStatus("Recipe deleted.");
+    setWorkspaceStatus("食谱已删除。");
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Recipe delete failed: ${error.message}`);
+    setWorkspaceStatus(`删除食谱失败：${error.message}`);
   }
 }
 
@@ -1955,13 +1955,13 @@ async function confirmProposal(proposalId) {
       state.ui.selectedProposalId = null;
       $("proposalCorrectionInput").value = "";
     }
-    setWorkspaceStatus("Proposal confirmed.");
+    setWorkspaceStatus("提案已确认。");
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Confirm failed: ${error.message}`);
+    setWorkspaceStatus(`确认失败：${error.message}`);
   }
 }
 
@@ -1975,27 +1975,27 @@ async function rejectProposal(proposalId) {
       state.ui.selectedProposalId = null;
       $("proposalCorrectionInput").value = "";
     }
-    setWorkspaceStatus("Proposal rejected.");
+    setWorkspaceStatus("提案已拒绝。");
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Reject failed: ${error.message}`);
+    setWorkspaceStatus(`拒绝失败：${error.message}`);
   }
 }
 
 async function submitCorrection() {
   const proposal = selectedProposal();
   if (!state.workspace.buddyId || !proposal) {
-    setWorkspaceStatus("Select a pending proposal before applying a correction.");
+    setWorkspaceStatus("请先选择待处理提案后再提交纠正。");
     return;
   }
   let deltas;
   try {
     deltas = JSON.parse($("proposalCorrectionInput").value);
   } catch (error) {
-    setWorkspaceStatus("Correction JSON is invalid.");
+    setWorkspaceStatus("纠正 JSON 格式无效。");
     return;
   }
   try {
@@ -2005,13 +2005,13 @@ async function submitCorrection() {
     });
     state.ui.selectedProposalId = null;
     $("proposalCorrectionInput").value = "";
-    setWorkspaceStatus("Correction applied.");
+    setWorkspaceStatus("纠正已应用。");
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Correction failed: ${error.message}`);
+    setWorkspaceStatus(`纠正失败：${error.message}`);
   }
 }
 
@@ -2025,7 +2025,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("agentManagementNameInput").addEventListener("input", syncAuthControls);
   $("authBuddySelect").addEventListener("change", () => {
     state.workspace.buddyId = $("authBuddySelect").value || null;
-    loadSyncSnapshot().catch((error) => setWorkspaceStatus(`Buddy switch failed: ${error.message}`));
+    loadSyncSnapshot().catch((error) => setWorkspaceStatus(`Buddy 切换失败：${error.message}`));
   });
   $("captureSubmitButton").addEventListener("click", submitCapture);
   $("photoFileInput").addEventListener("change", handlePhotoSelected);
