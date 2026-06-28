@@ -4,6 +4,7 @@ from buddys_api.policy import PermissionPolicy
 from buddys_api.providers.mock_provider import MockProvider
 from buddys_api.runtime import BuddysRuntime
 from buddys_api.trace_store import TraceStore
+from buddys_api.db import connect_db, initialize_database
 
 
 def make_runtime() -> BuddysRuntime:
@@ -133,3 +134,47 @@ def test_confirm_proposal_records_manual_fallback_without_marking_executed() -> 
     assert trace.tool_result.error_code == "adapter_unavailable"
     assert trace.tool_result.user_instruction == "请手动把客厅灯调暗到约 35%。"
     assert trace.tool_result.voice_prompt == "我现在无法直接控制客厅灯。请手动把客厅灯调暗到约 35%，完成后可以告诉我。"
+
+
+def test_confirm_proposal_survives_runtime_restart_when_proposal_stored_in_trace_store(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+
+    first_connection = connect_db(db_path)
+    initialize_database(first_connection)
+    first_runtime = BuddysRuntime(
+        provider=MockProvider(),
+        adapter=MockHomeAdapter(),
+        policy=PermissionPolicy(),
+        trace_store=TraceStore(first_connection),
+        cost_meter=CostMeter(),
+    )
+
+    first_buddy = first_runtime.create_home_buddy(user_id="user_restart")
+    proposal = first_runtime.submit_message(
+        buddy_id=first_buddy.buddy_id,
+        user_id="user_restart",
+        text="把客厅灯调暗",
+    )
+
+    first_connection.close()
+
+    second_connection = connect_db(db_path)
+    initialize_database(second_connection)
+    second_runtime = BuddysRuntime(
+        provider=MockProvider(),
+        adapter=MockHomeAdapter(),
+        policy=PermissionPolicy(),
+        trace_store=TraceStore(second_connection),
+        cost_meter=CostMeter(second_connection),
+    )
+
+    trace = second_runtime.confirm_proposal(proposal.proposal_id, approved=True)
+
+    assert trace.trace_id == proposal.trace_id
+    assert trace.proposal is not None
+    assert trace.proposal.proposal_id == proposal.proposal_id
+    assert trace.permission_decision.policy_result == "allow"
+    assert trace.permission_decision.confirmation_result == "approved"
+    assert trace.tool_call is not None
+    assert trace.tool_result is not None
+    assert trace.tool_result.status == "success"

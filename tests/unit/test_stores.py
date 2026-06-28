@@ -1,6 +1,6 @@
 from buddys_api.db import connect_db, initialize_database
 from buddys_api.cost_meter import CostMeter
-from buddys_api.schemas import ActionTrace
+from buddys_api.schemas import ActionProposal, ActionTrace, Intent, PermissionDecision
 from buddys_api.trace_store import TraceStore
 
 
@@ -93,3 +93,90 @@ def test_cost_meter_persists_events_in_sqlite_after_reopen(tmp_path) -> None:
     assert events[0].provider == "mock_deterministic"
     assert events[0].input_tokens == 32
     assert events[0].output_tokens == 18
+
+
+def test_trace_store_get_by_proposal_id_in_sqlite(tmp_path) -> None:
+    db_path = tmp_path / "buddys.sqlite3"
+    connection = connect_db(db_path)
+    initialize_database(connection)
+    first_store = TraceStore(connection)
+
+    proposal_a = ActionProposal(
+        proposal_id="proposal_a",
+        trace_id="trace_a",
+        buddy_id="buddy_home_001",
+        action_type="tool_call",
+        summary="先把灯调暗",
+        requires_confirmation=True,
+        tool_id="mock_home.light",
+        action="set_brightness",
+        args={"target": "living_room_light", "brightness": 35},
+    )
+    proposal_b = ActionProposal(
+        proposal_id="proposal_b",
+        trace_id="trace_b",
+        buddy_id="buddy_home_001",
+        action_type="tool_call",
+        summary="再把灯打开",
+        requires_confirmation=True,
+        tool_id="mock_home.light",
+        action="set_brightness",
+        args={"target": "living_room_light", "brightness": 80},
+    )
+
+    first_store.save(
+        ActionTrace(
+            trace_id="trace_a",
+            user_id="user_demo",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            device_id="device_mock_home_001",
+            turn_id="turn_a",
+            intent=Intent(name="adjust_light", summary="调整灯光"),
+            proposal=proposal_a,
+            permission_decision=PermissionDecision(
+                policy_result="allow",
+                confirmation_result="not_requested",
+                decided_by="policy",
+                reason="runtime_test",
+            ),
+        )
+    )
+    first_store.save(
+        ActionTrace(
+            trace_id="trace_b",
+            user_id="user_demo",
+            buddy_id="buddy_home_001",
+            space_id="space_home",
+            device_id="device_mock_home_001",
+            turn_id="turn_b",
+            intent=Intent(name="adjust_light", summary="调整灯光"),
+            proposal=proposal_b,
+            permission_decision=PermissionDecision(
+                policy_result="allow",
+                confirmation_result="not_requested",
+                decided_by="policy",
+                reason="runtime_test",
+            ),
+        )
+    )
+
+    restored_trace = first_store.get_by_proposal_id("proposal_b")
+    assert restored_trace is not None
+    assert restored_trace.trace_id == "trace_b"
+    assert restored_trace.proposal is not None
+    assert restored_trace.proposal.proposal_id == "proposal_b"
+    connection.close()
+
+    reopen_connection = connect_db(db_path)
+    initialize_database(reopen_connection)
+    reopen_store = TraceStore(reopen_connection)
+
+    reopened_trace = reopen_store.get_by_proposal_id("proposal_b")
+    assert reopened_trace is not None
+    assert reopened_trace.trace_id == "trace_b"
+    assert reopened_trace.proposal is not None
+    assert reopened_trace.proposal.proposal_id == "proposal_b"
+    assert reopen_store.get_by_proposal_id("proposal_missing") is None
+
+    reopen_connection.close()

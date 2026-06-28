@@ -163,4 +163,7 @@ class BuddysRuntime:
         try:
             return self._proposals[proposal_id]
         except KeyError as exc:
+            trace = self.trace_store.get_by_proposal_id(proposal_id=proposal_id)
+            if trace is not None and trace.proposal is not None:
+                return trace.proposal
             raise KeyError(f"proposal not found: {proposal_id}") from exc

@@ -66,3 +66,23 @@ class TraceStore:
             ).fetchall()
             return [ActionTrace.model_validate(json.loads(row["payload_json"])) for row in rows]
         return list(self._traces.values())
+
+    def get_by_proposal_id(self, proposal_id: str) -> ActionTrace | None:
+        if self.connection is not None:
+            row = self.connection.execute(
+                """
+                SELECT payload_json
+                FROM action_traces
+                WHERE json_extract(payload_json, '$.proposal.proposal_id') = ?
+                ORDER BY updated_at DESC, trace_id DESC
+                LIMIT 1
+                """,
+                (proposal_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return ActionTrace.model_validate(json.loads(row["payload_json"]))
+        for trace in self._traces.values():
+            if trace.proposal is not None and trace.proposal.proposal_id == proposal_id:
+                return trace
+        return None
