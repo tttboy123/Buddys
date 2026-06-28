@@ -290,6 +290,8 @@ def test_console_assets_project_workspace_maps_shopping_pass_snapshot_and_action
     assert "shoppingPassPromoteHintButton" in sync_auth_controls_body
     assert "shoppingPassPromoteLatestQueryButton" in sync_auth_controls_body
     assert "shoppingPassStatus" in render_shopping_pass_body
+    assert "还没有购物清单项" in script
+    assert "请先登录后再为该 Buddy 生成购物清单" in render_shopping_pass_body
     assert "state.workspace.shoppingPassItems.length" in render_shopping_pass_body
     assert "markShoppingPassItemDone(item.shopping_item_id)" in render_shopping_pass_body
     assert 'requestJson(`/me/buddies/${state.workspace.buddyId}/state-memory/shopping-pass/items`' in add_item_body
@@ -299,6 +301,14 @@ def test_console_assets_project_workspace_maps_shopping_pass_snapshot_and_action
     assert '$("shoppingPassAddButton").addEventListener("click", addShoppingPassItem);' in script
     assert '$("shoppingPassPromoteHintButton").addEventListener("click", promoteShoppingPassHint);' in script
     assert '$("shoppingPassPromoteLatestQueryButton").addEventListener("click", promoteShoppingPassLatestQuery);' in script
+    assert "请先创建或选择一个 Buddy，再添加购物清单条目。" in add_item_body
+    assert "购物清单条目名称不能为空" in add_item_body
+    assert "已按提示补齐：" in promote_hint_body
+    assert "提示补齐购物清单失败" in promote_hint_body
+    assert "已根据最近提问补齐" in promote_latest_query_body
+    assert "最近提问补齐失败" in promote_latest_query_body
+    assert "条目完成：" in mark_done_body
+    assert "购物清单条目完成失败" in mark_done_body
 
 
 def test_console_assets_project_safe_recent_activity_for_transparency_view() -> None:

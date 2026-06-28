@@ -5,7 +5,7 @@ const DEFAULT_CAPTURE_EMPTY = "No confirmed state yet.";
 const DEFAULT_PENDING_EMPTY = "No pending proposals.";
 const DEFAULT_QUERY_EMPTY = "No state-memory query yet.";
 const DEFAULT_RECIPE_EMPTY = "No saved recipes yet.";
-const DEFAULT_SHOPPING_PASS_EMPTY = "No shopping-pass items yet.";
+const DEFAULT_SHOPPING_PASS_EMPTY = "还没有购物清单项。";
 const BUDDYS_BOOTSTRAP = window.BUDDYS_BOOTSTRAP || { inviteRequired: false };
 
 const state = {
@@ -664,15 +664,15 @@ function renderRecipeShelf() {
 
 function shoppingPassSourceLabel(item) {
   if (item.source_kind === "manual") {
-    return "manual";
+    return "手动";
   }
   if (item.source_kind === "proactive_hint") {
-    return "hint";
+    return "提示";
   }
   if (item.source_kind === "missing_for_recipe") {
-    return "recipe gap";
+    return "食谱缺口";
   }
-  return item.source_kind || "unknown";
+  return item.source_kind || "未知";
 }
 
 function renderShoppingPass() {
@@ -681,18 +681,18 @@ function renderShoppingPass() {
   list.replaceChildren();
 
   if (!isAuthenticated()) {
-    $("shoppingPassStatus").textContent = "Login to build a shopping pass for this Buddy.";
+    $("shoppingPassStatus").textContent = "请先登录后再为该 Buddy 生成购物清单。";
   } else if (!state.workspace.buddyId) {
-    $("shoppingPassStatus").textContent = "Create your first Buddy before planning the next shopping pass.";
+    $("shoppingPassStatus").textContent = "请先创建并选择一个 Buddy，再规划下一次购物清单。";
   } else if (state.workspace.shoppingPassItems.length) {
     const openCount = Number(summary.open_count || state.workspace.shoppingPassItems.length || 0);
     const doneCount = Number(summary.done_count || 0);
-    $("shoppingPassStatus").textContent = `${openCount} open item(s). ${doneCount} done item(s) already cleared from this Buddy's pass.`;
+    $("shoppingPassStatus").textContent = `还有 ${openCount} 项未完成，${doneCount} 项已完成。`;
   } else if (Number(summary.done_count || 0) > 0) {
-    $("shoppingPassStatus").textContent = "All promoted items are done. Add another item or promote a new hint/query.";
+    $("shoppingPassStatus").textContent = "当前补货清单已处理完毕。可手动添加新条目，或从最新提示/问题补充。";
   } else {
     $("shoppingPassStatus").textContent =
-      "Add items manually or promote the latest hint/query to keep the next shopping pass ready.";
+      "可手动添加条目，或通过“最近提示/问题”补齐下次购物清单。";
   }
 
   if (!state.workspace.shoppingPassItems.length) {
@@ -1855,12 +1855,12 @@ async function deleteRecipe(recipeId) {
 
 async function addShoppingPassItem() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before adding a shopping-pass item.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy，再添加购物清单条目。");
     return;
   }
   const name = $("shoppingPassNameInput").value.trim();
   if (!name) {
-    setWorkspaceStatus("Shopping-pass item name is required.");
+    setWorkspaceStatus("购物清单条目名称不能为空。");
     syncAuthControls();
     return;
   }
@@ -1870,19 +1870,19 @@ async function addShoppingPassItem() {
       body: JSON.stringify({ name }),
     });
     $("shoppingPassNameInput").value = "";
-    setWorkspaceStatus(`Shopping pass item added: ${response.item.name}`);
+    setWorkspaceStatus(`购物清单条目已添加：${response.item.name}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Shopping pass add failed: ${error.message}`);
+    setWorkspaceStatus(`添加购物清单条目失败：${error.message}`);
   }
 }
 
 async function promoteShoppingPassHint() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before promoting a shopping hint.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy，再从提示补齐购物清单。");
     return;
   }
   try {
@@ -1890,19 +1890,19 @@ async function promoteShoppingPassHint() {
       method: "POST",
       body: JSON.stringify({}),
     });
-    setWorkspaceStatus(`Shopping pass item added from hint: ${response.item.name}`);
+    setWorkspaceStatus(`已按提示补齐：${response.item.name}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Shopping pass hint promotion failed: ${error.message}`);
+    setWorkspaceStatus(`提示补齐购物清单失败：${error.message}`);
   }
 }
 
 async function promoteShoppingPassLatestQuery() {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before promoting the latest query.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy，再根据最近提问补齐清单。");
     return;
   }
   try {
@@ -1913,21 +1913,21 @@ async function promoteShoppingPassLatestQuery() {
     const itemNames = (response.items || []).map((item) => item.name);
     setWorkspaceStatus(
       itemNames.length
-        ? `Shopping pass updated from latest query: ${itemNames.join(" / ")}`
-        : "Shopping pass updated from latest query.",
+        ? `已根据最近提问补齐：${itemNames.join(" / ")}`
+        : "已根据最近提问补齐购物清单。",
     );
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Shopping pass query promotion failed: ${error.message}`);
+    setWorkspaceStatus(`最近提问补齐失败：${error.message}`);
   }
 }
 
 async function markShoppingPassItemDone(shoppingItemId) {
   if (!state.workspace.buddyId) {
-    setWorkspaceStatus("Create or select a Buddy before finishing a shopping-pass item.");
+    setWorkspaceStatus("请先创建或选择一个 Buddy，再完成清单条目。");
     return;
   }
   try {
@@ -1935,13 +1935,13 @@ async function markShoppingPassItemDone(shoppingItemId) {
       method: "POST",
       body: JSON.stringify({}),
     });
-    setWorkspaceStatus(`Shopping pass item done: ${response.item.name}`);
+    setWorkspaceStatus(`条目完成：${response.item.name}`);
     await refreshWorkspace();
   } catch (error) {
     if (isRecoveredSessionExpiry(error)) {
       return;
     }
-    setWorkspaceStatus(`Shopping pass done failed: ${error.message}`);
+    setWorkspaceStatus(`购物清单条目完成失败：${error.message}`);
   }
 }
 
