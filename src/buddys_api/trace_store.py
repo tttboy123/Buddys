@@ -55,17 +55,39 @@ class TraceStore:
         except KeyError as exc:
             raise KeyError(f"trace not found: {trace_id}") from exc
 
-    def list(self) -> list[ActionTrace]:
+    def list(
+        self,
+        *,
+        buddy_id: str | None = None,
+        reverse: bool = False,
+        limit: int | None = None,
+    ) -> list[ActionTrace]:
         if self.connection is not None:
+            order = "DESC" if reverse else "ASC"
+            query = """
+            SELECT payload_json
+            FROM action_traces
+            """
+            params: list[str] = []
+            if buddy_id is not None:
+                query += "\n            WHERE buddy_id = ?"
+                params.append(buddy_id)
+            query += f"\n            ORDER BY created_at {order}, trace_id {order}"
+            if limit is not None:
+                query += "\n            LIMIT ?"
+                params.append(str(limit))
             rows = self.connection.execute(
-                """
-                SELECT payload_json
-                FROM action_traces
-                ORDER BY created_at, trace_id
-                """
+                query,
+                tuple(params),
             ).fetchall()
             return [ActionTrace.model_validate(json.loads(row["payload_json"])) for row in rows]
-        return list(self._traces.values())
+        traces = list(self._traces.values())
+        if buddy_id is not None:
+            traces = [trace for trace in traces if trace.buddy_id == buddy_id]
+        traces.sort(key=lambda trace: (trace.created_at, trace.trace_id), reverse=reverse)
+        if limit is not None:
+            traces = traces[:limit]
+        return traces
 
     def get_by_proposal_id(self, proposal_id: str) -> ActionTrace | None:
         if self.connection is not None:

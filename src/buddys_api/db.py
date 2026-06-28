@@ -266,6 +266,9 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_action_traces_proposal_id
             ON action_traces(json_extract(payload_json, '$.proposal.proposal_id'));
 
+        CREATE INDEX IF NOT EXISTS idx_action_traces_created_at
+            ON action_traces(created_at, trace_id);
+
         CREATE TABLE IF NOT EXISTS cost_events_runtime (
             cost_event_id TEXT PRIMARY KEY,
             trace_id TEXT NOT NULL,

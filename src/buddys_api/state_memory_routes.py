@@ -506,8 +506,12 @@ def _latest_missing_recipe_query(
     user_id: str,
     buddy_id: str,
 ) -> dict[str, object] | None:
-    traces = request.app.state.runtime.trace_store.list()
-    for trace in reversed(traces):
+    traces = request.app.state.runtime.trace_store.list(
+        buddy_id=buddy_id,
+        reverse=True,
+        limit=200,
+    )
+    for trace in traces:
         if trace.user_id != user_id or trace.buddy_id != buddy_id:
             continue
         if trace.intent.name != "state_memory_query" or trace.proposal.action_type != "reply_only":
